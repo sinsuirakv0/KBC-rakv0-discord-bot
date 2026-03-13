@@ -49,7 +49,7 @@ const save: Command = {
     }
 
     const processingMsg = await channel.send(
-      `セーブデータを取得中...`
+      `セーブファイルを取得中...`
     );
 
     const nonce = crypto.randomBytes(16).toString("hex");
@@ -104,10 +104,10 @@ const save: Command = {
       const dm = await author.createDM();
       const attachment = new AttachmentBuilder(buffer, { name: "SAVE_DATA" });
       await dm.send({
-        content: `✅ セーブデータです！\n引継ぎコード: \`${transfer}\`\n認証番号: \`${pin}\``,
+        content: `✅ セーブファイルです！\n引継ぎコード: \`${transfer}\`\n認証番号: \`${pin}\``,
         files: [attachment],
       });
-      await processingMsg.edit(`✅ DMにセーブデータを送信しました！`);
+      await processingMsg.edit(`✅ DMにセーブファイルを送信しました！`);
     } catch (err) {
       await processingMsg.edit(
         `❌ DMの送信に失敗しました。DMを受け取れる設定になっているか確認してください。`
