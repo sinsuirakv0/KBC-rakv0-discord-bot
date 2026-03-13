@@ -4,7 +4,7 @@ import { Command } from "../types/Command";
 const ping: Command = {
   name: "ping",
   description: "ボットの応答速度を確認します",
-  usage: "k.ping",
+  usage: "ke.ping",
 
   async execute(message: Message): Promise<void> {
     const sent = await message.reply("🏓 計測中...");
