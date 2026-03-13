@@ -16,7 +16,7 @@ const COUNTRY_ALIAS: Record<string, string> = {
 const save: Command = {
   name: "save",
   description: "にゃんこのセーブデータをダウンロードしてDMに送ります",
-  usage: "ke.save <引継ぎコード> <認証番号> <国コード(ja/en/ko/tw)>",
+  usage: "k.save <引継ぎコード> <認証番号> <国コード>",
 
   async execute(message: Message, args: string[]): Promise<void> {
     const { author } = message;
@@ -27,7 +27,7 @@ const save: Command = {
 
     if (args.length < 3) {
       const err = await channel.send(
-        `❌ <@${author.id}> 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`k.save 1f46287b2 5678 ja\``
+        `❌ 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`k.save 1f46287b2 5678 ja\``
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
@@ -40,14 +40,14 @@ const save: Command = {
 
     if (!countryCode) {
       const err = await channel.send(
-        `❌ <@${author.id}> 国コードは \`ja\` / \`en\` / \`ko\` / \`tw\` (または \`jp\` / \`kr\`) を指定してください`
+        `❌ 国コードは \`ja\` / \`en\` / \`ko\` / \`tw\` (または \`jp\` / \`kr\`) を指定してください`
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
     }
 
     const processingMsg = await channel.send(
-      `⏳ <@${author.id}> セーブデータを取得中...`
+      `セーブデータを取得中...`
     );
 
     const nonce = crypto.randomBytes(16).toString("hex");
@@ -73,7 +73,7 @@ const save: Command = {
         body: JSON.stringify(payload),
       });
     } catch (err) {
-      await processingMsg.edit(`❌ <@${author.id}> APIへの接続に失敗しました`);
+      await processingMsg.edit(`❌ APIへの接続に失敗しました`);
       console.error("[save] fetch error:", err);
       return;
     }
@@ -81,7 +81,7 @@ const save: Command = {
     if (!upstream.ok) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ <@${author.id}> エラー`
+        `❌ エラー`
       );
       return;
     }
@@ -90,7 +90,7 @@ const save: Command = {
     if (!contentType.includes("application/octet-stream")) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ <@${author.id}> 予期しないレスポンス形式`
+        `❌ 予期しないレスポンス形式`
       );
       return;
     }
@@ -105,10 +105,10 @@ const save: Command = {
         content: `✅ セーブデータです！`,
         files: [attachment],
       });
-      await processingMsg.edit(`✅ <@${author.id}> DMにセーブデータを送信しました！`);
+      await processingMsg.edit(`✅ DMにセーブデータを送信しました！`);
     } catch (err) {
       await processingMsg.edit(
-        `❌ <@${author.id}> DMの送信に失敗しました。DMを受け取れる設定になっているか確認してください。`
+        `❌ DMの送信に失敗しました。DMを受け取れる設定になっているか確認してください。`
       );
       console.error("[save] DM send error:", err);
     }
