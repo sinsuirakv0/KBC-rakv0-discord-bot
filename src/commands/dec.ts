@@ -3,9 +3,9 @@ import { Command } from "../types/Command";
 import { decryptDat, getOutputName, SALTS } from "../utils/datCrypto";
 
 const decrypt: Command = {
-  name: "復号化",
+  name: "dec",
   description: ".datファイルをTSVに復号します",
-  usage: "o.復号化 [locale: jp/en/kr/tw]",
+  usage: "o.dec [locale: jp/en/kr/tw]",
 
   async execute(message: Message, args: string[]): Promise<void> {
     const channel = message.channel as TextChannel;
