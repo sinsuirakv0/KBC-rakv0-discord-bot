@@ -4,7 +4,7 @@ import { Command } from "../types/Command";
 const help: Command = {
   name: "help",
   description: "コマンド一覧を表示します",
-  usage: "ke.help",
+  usage: "o.help",
 
   async execute(message: Message): Promise<void> {
     // index.ts で登録したコレクションを参照
@@ -17,7 +17,7 @@ const help: Command = {
     const embed = new EmbedBuilder()
       .setTitle("📖 コマンド一覧")
       .setColor(0x5865f2)
-      .setDescription("すべてのコマンドは `ke.` から始まります");
+      .setDescription("すべてのコマンドは `o.` から始まります");
 
     if (commands) {
       for (const [, cmd] of commands) {
