@@ -1,10 +1,9 @@
 import crypto from "crypto";
-import { AttachmentBuilder, Message } from "discord.js";
+import { AttachmentBuilder, Message, TextChannel } from "discord.js";
 import { Command } from "../types/Command";
 
 const VERSION = 150201;
 
-// jp→ja, kr→ko のような略称も受け付ける
 const COUNTRY_ALIAS: Record<string, string> = {
   jp: "ja",
   kr: "ko",
@@ -21,12 +20,13 @@ const save: Command = {
 
   async execute(message: Message, args: string[]): Promise<void> {
     const { author } = message;
+    const channel = message.channel as TextChannel;
 
     // コマンドメッセージを即削除
     await message.delete().catch(() => void 0);
 
     if (args.length < 3) {
-      const err = await message.channel.send(
+      const err = await channel.send(
         `❌ <@${author.id}> 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`k.save 1f46287b2 5678 ja\``
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
@@ -39,14 +39,14 @@ const save: Command = {
     const countryCode = COUNTRY_ALIAS[rawCountry];
 
     if (!countryCode) {
-      const err = await message.channel.send(
+      const err = await channel.send(
         `❌ <@${author.id}> 国コードは \`ja\` / \`en\` / \`ko\` / \`tw\` (または \`jp\` / \`kr\`) を指定してください`
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
     }
 
-    const processingMsg = await message.channel.send(
+    const processingMsg = await channel.send(
       `⏳ <@${author.id}> セーブデータを取得中...`
     );
 
@@ -81,7 +81,7 @@ const save: Command = {
     if (!upstream.ok) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ <@${author.id}> エラー: \`${upstream.status} ${upstream.statusText}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
+        `❌ <@${author.id}> エラー`
       );
       return;
     }
