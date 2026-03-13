@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { Command } from "./types/Command";
 
-const PREFIX = "ke.";
+const PREFIX = "o.";
 
 const client = new Client({
   intents: [
