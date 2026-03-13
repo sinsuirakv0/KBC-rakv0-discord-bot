@@ -1,91 +1,54 @@
 import crypto from "crypto";
-import {
-  AttachmentBuilder,
-  Collection,
-  Message,
-  MessageReaction,
-  TextChannel,
-  User,
-} from "discord.js";
+import { AttachmentBuilder, Message } from "discord.js";
 import { Command } from "../types/Command";
 
 const VERSION = 150201;
 
-const COUNTRY_OPTIONS: { emoji: string; code: string }[] = [
-  { emoji: "🇯🇵", code: "ja" },
-  { emoji: "🇺🇸", code: "en" },
-  { emoji: "🇰🇷", code: "ko" },
-  { emoji: "🇹🇼", code: "tw" },
-];
+// jp→ja, kr→ko のような略称も受け付ける
+const COUNTRY_ALIAS: Record<string, string> = {
+  jp: "ja",
+  kr: "ko",
+  tw: "tw",
+  ja: "ja",
+  en: "en",
+  ko: "ko",
+};
 
 const save: Command = {
   name: "save",
   description: "にゃんこのセーブデータをダウンロードしてDMに送ります",
-  usage: "k.save",
+  usage: "k.save <引継ぎコード> <認証番号> <国コード(ja/en/ko/tw)>",
 
-  async execute(message: Message): Promise<void> {
+  async execute(message: Message, args: string[]): Promise<void> {
     const { author } = message;
-    const channel = message.channel as TextChannel;
 
-    // ① 引継ぎコードを質問
-    await message.reply("🔑 引継ぎコード（Transfer Code）を入力してください");
+    // コマンドメッセージを即削除
+    await message.delete().catch(() => void 0);
 
-    const transferCollection: Collection<string, Message> =
-      await channel.awaitMessages({
-        filter: (m: Message) => m.author.id === author.id,
-        max: 1,
-      });
-    const transferMsg = transferCollection.first();
-
-    if (!transferMsg) {
-      await message.reply("❌ 引継ぎコードを取得できませんでした");
+    if (args.length < 3) {
+      const err = await message.channel.send(
+        `❌ <@${author.id}> 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`k.save 1f46287b2 5678 ja\``
+      );
+      setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
     }
-    const transfer = transferMsg.content.trim();
 
-    // ② 認証番号を質問
-    await message.reply("🔢 認証番号（PIN）を入力してください");
+    const transfer = args[0];
+    const pin = args[1];
+    const rawCountry = args[2].toLowerCase();
+    const countryCode = COUNTRY_ALIAS[rawCountry];
 
-    const pinCollection: Collection<string, Message> =
-      await channel.awaitMessages({
-        filter: (m: Message) => m.author.id === author.id,
-        max: 1,
-      });
-    const pinMsg = pinCollection.first();
-
-    if (!pinMsg) {
-      await message.reply("❌ 認証番号を取得できませんでした");
+    if (!countryCode) {
+      const err = await message.channel.send(
+        `❌ <@${author.id}> 国コードは \`ja\` / \`en\` / \`ko\` / \`tw\` (または \`jp\` / \`kr\`) を指定してください`
+      );
+      setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
     }
-    const pin = pinMsg.content.trim();
 
-    // ③ 国コードをリアクションで質問
-    const reactionPrompt = await message.reply(
-      "🌏 国コードをリアクションで選んでください\n" +
-        COUNTRY_OPTIONS.map((o) => `${o.emoji} → \`${o.code}\``).join("\n")
+    const processingMsg = await message.channel.send(
+      `⏳ <@${author.id}> セーブデータを取得中...`
     );
-
-    for (const opt of COUNTRY_OPTIONS) {
-      await reactionPrompt.react(opt.emoji);
-    }
-
-    const countryCode = await new Promise<string>((resolve) => {
-      const collector = reactionPrompt.createReactionCollector({
-        filter: (reaction: MessageReaction, user: User) =>
-          user.id === author.id &&
-          COUNTRY_OPTIONS.some((o) => o.emoji === reaction.emoji.name),
-        max: 1,
-      });
-      collector.on("collect", (reaction: MessageReaction) => {
-        const found = COUNTRY_OPTIONS.find(
-          (o) => o.emoji === reaction.emoji.name
-        );
-        resolve(found?.code ?? "ja");
-      });
-    });
-
-    // ④ API リクエスト
-    const processingMsg = await message.reply("⏳ セーブデータを取得中...");
 
     const nonce = crypto.randomBytes(16).toString("hex");
     const url = `https://nyanko-save.ponosgames.com/v2/transfers/${encodeURIComponent(
@@ -110,7 +73,7 @@ const save: Command = {
         body: JSON.stringify(payload),
       });
     } catch (err) {
-      await processingMsg.edit("❌ APIへの接続に失敗しました");
+      await processingMsg.edit(`❌ <@${author.id}> APIへの接続に失敗しました`);
       console.error("[save] fetch error:", err);
       return;
     }
@@ -118,7 +81,7 @@ const save: Command = {
     if (!upstream.ok) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ エラー: \`${upstream.status} ${upstream.statusText}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
+        `❌ <@${author.id}> エラー: \`${upstream.status} ${upstream.statusText}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
       );
       return;
     }
@@ -127,7 +90,7 @@ const save: Command = {
     if (!contentType.includes("application/octet-stream")) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ 予期しないレスポンス形式: \`${contentType}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
+        `❌ <@${author.id}> 予期しないレスポンス形式: \`${contentType}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
       );
       return;
     }
@@ -135,18 +98,17 @@ const save: Command = {
     const arrayBuffer = await upstream.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // ⑤ DM に送信
     try {
       const dm = await author.createDM();
       const attachment = new AttachmentBuilder(buffer, { name: "SAVE_DATA" });
       await dm.send({
-        content: `✅ セーブデータです（引継ぎコード: \`${transfer}\` / 国コード: \`${countryCode}\`）`,
+        content: `✅ セーブデータです！`,
         files: [attachment],
       });
-      await processingMsg.edit("✅ DMにセーブデータを送信しました！");
+      await processingMsg.edit(`✅ <@${author.id}> DMにセーブデータを送信しました！`);
     } catch (err) {
       await processingMsg.edit(
-        "❌ DMの送信に失敗しました。DMを受け取れる設定になっているか確認してください。"
+        `❌ <@${author.id}> DMの送信に失敗しました。DMを受け取れる設定になっているか確認してください。`
       );
       console.error("[save] DM send error:", err);
     }
