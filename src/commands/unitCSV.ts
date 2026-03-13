@@ -174,9 +174,9 @@ function buildRow(page: number): ActionRowBuilder<ButtonBuilder> {
 }
 
 const unitCSV: Command = {
-  name: "unitCSV",
+  name: "unitcsv",
   description: "unitCSVの意味をまとめてます",
-  usage: "o.unitCSV",
+  usage: "o.unitcsv",
 
   async execute(message: Message): Promise<void> {
     const channel = message.channel as TextChannel;
