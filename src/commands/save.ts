@@ -15,7 +15,7 @@ const COUNTRY_ALIAS: Record<string, string> = {
 
 const save: Command = {
   name: "save",
-  description: "にゃんこのセーブデータをダウンロードしてDMに送ります",
+  description: "にゃんこのセーブファイルをダウンロードしてDMに送ります",
   usage: "k.save <引継ぎコード> <認証番号> <国コード>",
 
   async execute(message: Message, args: string[]): Promise<void> {
@@ -29,7 +29,7 @@ const save: Command = {
 
     if (args.length < 3) {
       const err = await channel.send(
-        `❌ 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`ke.save 1f46287b2 5678 ja\``
+        `❌ 使い方: \`ke.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`ke.save 1f46287b2 5678 ja\``
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
@@ -49,7 +49,7 @@ const save: Command = {
     }
 
     const processingMsg = await channel.send(
-      `⏳ セーブデータを取得中...`
+      `セーブデータを取得中...`
     );
 
     const nonce = crypto.randomBytes(16).toString("hex");
@@ -104,7 +104,7 @@ const save: Command = {
       const dm = await author.createDM();
       const attachment = new AttachmentBuilder(buffer, { name: "SAVE_DATA" });
       await dm.send({
-        content: `✅ セーブデータです！（引継ぎコード: \`${transfer}\` / 認証番号: \`${pin}\`）`,
+        content: `✅ セーブデータです！\n引継ぎコード: \`${transfer}\`\n認証番号: \`${pin}\``,
         files: [attachment],
       });
       await processingMsg.edit(`✅ DMにセーブデータを送信しました！`);
