@@ -5,7 +5,7 @@ import { encryptTsv, getOutputName, SALTS } from "../utils/datCrypto";
 const encrypt: Command = {
   name: "暗号化",
   description: ".tsvファイルをDATに暗号化します",
-  usage: "k.暗号化 [locale: jp/en/kr/tw]",
+  usage: "o.暗号化 [locale: jp/en/kr/tw]",
 
   async execute(message: Message, args: string[]): Promise<void> {
     const channel = message.channel as TextChannel;
