@@ -1,5 +1,12 @@
 import crypto from "crypto";
-import { AttachmentBuilder, Message, ReactionCollector } from "discord.js";
+import {
+  AttachmentBuilder,
+  Collection,
+  Message,
+  MessageReaction,
+  TextChannel,
+  User,
+} from "discord.js";
 import { Command } from "../types/Command";
 
 const VERSION = 150201;
@@ -17,17 +24,18 @@ const save: Command = {
   usage: "k.save",
 
   async execute(message: Message): Promise<void> {
-    const { author, channel } = message;
+    const { author } = message;
+    const channel = message.channel as TextChannel;
 
     // ① 引継ぎコードを質問
     await message.reply("🔑 引継ぎコード（Transfer Code）を入力してください");
 
-    const transferMsg = await channel
-      .awaitMessages({
-        filter: (m) => m.author.id === author.id,
+    const transferCollection: Collection<string, Message> =
+      await channel.awaitMessages({
+        filter: (m: Message) => m.author.id === author.id,
         max: 1,
-      })
-      .then((c) => c.first());
+      });
+    const transferMsg = transferCollection.first();
 
     if (!transferMsg) {
       await message.reply("❌ 引継ぎコードを取得できませんでした");
@@ -38,12 +46,12 @@ const save: Command = {
     // ② 認証番号を質問
     await message.reply("🔢 認証番号（PIN）を入力してください");
 
-    const pinMsg = await channel
-      .awaitMessages({
-        filter: (m) => m.author.id === author.id,
+    const pinCollection: Collection<string, Message> =
+      await channel.awaitMessages({
+        filter: (m: Message) => m.author.id === author.id,
         max: 1,
-      })
-      .then((c) => c.first());
+      });
+    const pinMsg = pinCollection.first();
 
     if (!pinMsg) {
       await message.reply("❌ 認証番号を取得できませんでした");
@@ -62,18 +70,13 @@ const save: Command = {
     }
 
     const countryCode = await new Promise<string>((resolve) => {
-      const collector: ReactionCollector = reactionPrompt.createReactionCollector(
-        {
-          filter: (reaction, user) => {
-            return (
-              user.id === author.id &&
-              COUNTRY_OPTIONS.some((o) => o.emoji === reaction.emoji.name)
-            );
-          },
-          max: 1,
-        }
-      );
-      collector.on("collect", (reaction) => {
+      const collector = reactionPrompt.createReactionCollector({
+        filter: (reaction: MessageReaction, user: User) =>
+          user.id === author.id &&
+          COUNTRY_OPTIONS.some((o) => o.emoji === reaction.emoji.name),
+        max: 1,
+      });
+      collector.on("collect", (reaction: MessageReaction) => {
         const found = COUNTRY_OPTIONS.find(
           (o) => o.emoji === reaction.emoji.name
         );
