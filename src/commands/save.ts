@@ -90,7 +90,7 @@ const save: Command = {
     if (!contentType.includes("application/octet-stream")) {
       const body = await upstream.text().catch(() => "");
       await processingMsg.edit(
-        `❌ <@${author.id}> 予期しないレスポンス形式: \`${contentType}\`\n\`\`\`${body.slice(0, 500)}\`\`\``
+        `❌ <@${author.id}> 予期しないレスポンス形式`
       );
       return;
     }
