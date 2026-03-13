@@ -16,7 +16,7 @@ const COUNTRY_ALIAS: Record<string, string> = {
 const save: Command = {
   name: "save",
   description: "にゃんこのセーブデータをダウンロードしてDMに送ります",
-  usage: "k.save <引継ぎコード> <認証番号> <国コード(ja/en/ko/tw)>",
+  usage: "ke.save <引継ぎコード> <認証番号> <国コード(ja/en/ko/tw)>",
 
   async execute(message: Message, args: string[]): Promise<void> {
     const { author } = message;
