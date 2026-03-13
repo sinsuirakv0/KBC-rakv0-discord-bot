@@ -24,10 +24,12 @@ const save: Command = {
 
     // コマンドメッセージを即削除
     await message.delete().catch(() => void 0);
+    const noticeMsg = await channel.send("コマンドを削除しました。念のため機種変更手続きを中止してください。");
+    setTimeout(() => noticeMsg.delete().catch(() => void 0), 10_000);
 
     if (args.length < 3) {
       const err = await channel.send(
-        `❌ 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`k.save 1f46287b2 5678 ja\``
+        `❌ 使い方: \`k.save <引継ぎコード> <認証番号> <国コード>\`\n例: \`ke.save 1f46287b2 5678 ja\``
       );
       setTimeout(() => err.delete().catch(() => void 0), 10_000);
       return;
@@ -47,7 +49,7 @@ const save: Command = {
     }
 
     const processingMsg = await channel.send(
-      `セーブデータを取得中...`
+      `⏳ セーブデータを取得中...`
     );
 
     const nonce = crypto.randomBytes(16).toString("hex");
@@ -102,7 +104,7 @@ const save: Command = {
       const dm = await author.createDM();
       const attachment = new AttachmentBuilder(buffer, { name: "SAVE_DATA" });
       await dm.send({
-        content: `✅ セーブデータです！`,
+        content: `✅ セーブデータです！（引継ぎコード: \`${transfer}\` / 認証番号: \`${pin}\`）`,
         files: [attachment],
       });
       await processingMsg.edit(`✅ DMにセーブデータを送信しました！`);
