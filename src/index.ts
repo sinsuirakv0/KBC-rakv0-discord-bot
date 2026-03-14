@@ -8,6 +8,7 @@ import {
 import fs from "fs";
 import path from "path";
 import { Command } from "./types/Command";
+import { startWebhookServer } from "./utils/webhookServer";
 
 const PREFIX = "o.";
 
@@ -16,7 +17,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
   ],
 });
 
@@ -37,6 +38,7 @@ client.once("ready", () => {
   console.log("Logged in as " + client.user?.tag);
   console.log("Prefix: " + PREFIX);
   client.user?.setActivity(PREFIX + "help でコマンド一覧", { type: 0 });
+  startWebhookServer(client);
 });
 
 client.on("messageCreate", async (message: Message) => {
