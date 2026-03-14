@@ -67,7 +67,7 @@ function buildScheduleEmbeds(json: GachaJson): EmbedBuilder[] {
 
   const embeds: EmbedBuilder[] = [];
   let current = new EmbedBuilder()
-    .setTitle("🎰 今後開催予定のガチャ一覧")
+    .setTitle("今後開催予定のガチャ一覧")
     .setColor(0xf0a500)
     .setFooter({ text: `更新: ${json.updatedAt}` });
   let count = 0;
