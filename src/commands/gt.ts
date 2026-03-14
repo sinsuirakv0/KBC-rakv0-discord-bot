@@ -102,11 +102,12 @@ function parseDate(dateStr: string, timeStr: string): Date {
 }
 
 function formatDate(date: Date): string {
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const wd = WEEKDAYS[date.getDay()];
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  const wd = WEEKDAYS[jst.getUTCDay()];
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
   return `${m}/${d}(${wd}) ${hh}:${mm}`;
 }
 
@@ -262,7 +263,7 @@ async function handleSearch(query: string, message: Message, channel: TextChanne
     for (let i = 0; i < chunks.length; i++) {
       const embed = new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle(i === 0 ? `🔍 「${query}」の検索結果 (${results.length}件)` : `続き`)
+        .setTitle(i === 0 ? `🔍 「${query}」の検索結果 (${results.length}件)` : `🔍 続き`)
         .setDescription(chunks[i]);
       await channel.send({ embeds: [embed] });
     }
@@ -273,7 +274,7 @@ async function handleSearch(query: string, message: Message, channel: TextChanne
 // o.gt <id> json — 該当ガチャのJSONブロックを返す
 // ============================================================
 async function handleJson(id: number, message: Message, channel: TextChannel): Promise<void> {
-  const processingMsg = await channel.send("JSONを取得中...");
+  const processingMsg = await channel.send("⏳ JSONを取得中...");
   let json: GachaJson;
   try {
     json = await fetchGachaJson();
