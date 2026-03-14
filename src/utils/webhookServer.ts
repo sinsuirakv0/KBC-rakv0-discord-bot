@@ -5,6 +5,27 @@ import { Client, EmbedBuilder, TextChannel } from "discord.js";
 const PORT = parseInt(process.env.WEBHOOK_PORT ?? "3000");
 const SECRET = process.env.GITHUB_WEBHOOK_SECRET ?? "";
 const TARGET_FILE = "data/gatya.json";
+const CSV_URL = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-test/main/data/gatya_name.csv";
+
+async function fetchNameMap(): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  try {
+    const res = await fetch(CSV_URL);
+    const text = await res.text();
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const commaIdx = trimmed.indexOf(",");
+      if (commaIdx === -1) continue;
+      const id = parseInt(trimmed.slice(0, commaIdx));
+      const name = trimmed.slice(commaIdx + 1).trim();
+      if (!isNaN(id)) map.set(id, name);
+    }
+  } catch (err) {
+    console.error("[webhook] CSV取得エラー:", err);
+  }
+  return map;
+}
 
 const FLAGS_MAP: Record<number, string> = {
   4:     "【step up】",
@@ -43,15 +64,17 @@ function parseDate(dateStr: string, timeStr: string): Date {
 }
 
 function formatDate(date: Date): string {
-  const m  = String(date.getMonth() + 1).padStart(2, "0");
-  const d  = String(date.getDate()).padStart(2, "0");
-  const wd = WEEKDAYS[date.getDay()];
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const m  = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d  = String(jst.getUTCDate()).padStart(2, "0");
+  const wd = WEEKDAYS[jst.getUTCDay()];
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mm = String(jst.getUTCMinutes()).padStart(2, "0");
   return `${m}/${d}(${wd}) ${hh}:${mm}`;
 }
 
-function buildScheduleEmbeds(json: GachaJson): EmbedBuilder[] {
+async function buildScheduleEmbeds(json: GachaJson): Promise<EmbedBuilder[]> {
+  const nameMap = await fetchNameMap();
   const now = new Date();
   const blocks = json.data
     .filter((b) =>
@@ -82,7 +105,8 @@ function buildScheduleEmbeds(json: GachaJson): EmbedBuilder[] {
       const flag       = FLAGS_MAP[g.flags] ?? "";
       const guaranteed = g.guaranteed ? "【確定】" : "";
       const rates = [g.rates.rare, g.rates.superRare, g.rates.uberRare, g.rates.legendRare].join(",");
-      lines.push(`・**${g.id}** (pos:${header.gachaCount})`);
+      const name = nameMap.get(g.id) ?? "不明";
+      lines.push(`・**${g.id}** ${name} (pos:${header.gachaCount})`);
       lines.push(`レート > ${rates}${guaranteed}${flag ? " " + flag : ""}`);
     }
     if (count >= 25) {
@@ -175,7 +199,7 @@ export function startWebhookServer(client: Client): void {
           "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-test/main/data/gatya.json"
         );
         const json = (await jsonRes.json()) as GachaJson;
-        const embeds = buildScheduleEmbeds(json);
+        const embeds = await buildScheduleEmbeds(json);
         for (const embed of embeds) {
           await textChannel.send({ embeds: [embed] });
         }
