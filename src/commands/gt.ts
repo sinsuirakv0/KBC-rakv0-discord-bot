@@ -155,7 +155,7 @@ async function handleSchedule(message: Message, channel: TextChannel): Promise<v
   // 25フィールド上限に対応してEmbedを複数に分割
   const embeds: EmbedBuilder[] = [];
   let currentEmbed = new EmbedBuilder()
-    .setTitle("🎰 ガチャスケジュール")
+    .setTitle("ガチャスケジュール")
     .setColor(0xf0a500)
     .setFooter({ text: `更新: ${json.updatedAt}` });
   let fieldCount = 0;
