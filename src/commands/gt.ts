@@ -2,9 +2,9 @@ import { EmbedBuilder, Message, TextChannel } from "discord.js";
 import { Command } from "../types/Command";
 
 const CSV_URL =
-  "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-test/main/data/gatya_name.csv";
+  "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event/main/data/gatya_name.csv";
 const JSON_URL =
-  "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-test/main/data/gatya.json";
+  "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event/main/data/gatya.json";
 
 const FLAGS_MAP: Record<number, string> = {
   4:     "【step up】",
