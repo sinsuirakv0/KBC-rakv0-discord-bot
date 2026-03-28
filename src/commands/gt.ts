@@ -136,13 +136,20 @@ function rateStr(rates: GachaRate): string {
 // ================================
 type Mode = "R" | "E" | "N";
 
-function detectModeAndQuery(args: string[]): { mode: Mode; query: string } {
+function detectModeAndQuery(args: string[]): { mode: Mode; query: string; raw: boolean } {
+  // raw は最優先
+  if (args.length >= 2 && args[1].toLowerCase() === "r") {
+    return { mode: "R", query: args[0], raw: true };
+  }
+
+  // ID検索モード（左側）
   if (args.length >= 2) {
     const m = args[0].toLowerCase();
-    if (m === "e") return { mode: "E", query: args.slice(1).join(" ") };
-    if (m === "n") return { mode: "N", query: args.slice(1).join(" ") };
+    if (m === "e") return { mode: "E", query: args[1], raw: false };
+    if (m === "n") return { mode: "N", query: args[1], raw: false };
   }
-  return { mode: "R", query: args.join(" ") };
+
+  return { mode: "R", query: args.join(" "), raw: false };
 }
 
 function csvUrlForMode(mode: Mode): string {
@@ -176,13 +183,13 @@ async function handleRaw(id: number, message: Message, channel: TextChannel) {
 
   const block = json.data.find((b) => b.gachas.some((g) => g.id === id));
   if (!block) {
-    await processingMsg.edit(`❌ ID \`${id}\` を含むガチャブロックは見つかりませんでした`);
+    await processingMsg.edit(`❌ ID \`${id}\` はガチャjsonに含まれていません`);
     return;
   }
 
   const entry = block.gachas.find((g) => g.id === id);
   if (!entry?.raw) {
-    await processingMsg.edit("❌ raw データが見つかりませんでした");
+    await processingMsg.edit("❌ raw データがありません");
     return;
   }
 
@@ -211,12 +218,14 @@ async function handleIdSearch(id: number, mode: Mode, message: Message, channel:
   }
 
   const rare = mode;
+  const ponosId = String(id).padStart(3, "0");
+
   const embed = new EmbedBuilder()
     .setTitle(`🔍 ${id} ${name}`)
     .setColor(0x5865f2)
     .setDescription(
       `https://jarjarblink.github.io/JDB/gatya.html?cc=ja&rare=${rare}&no=${id}\n` +
-        `https://ponosgames.com/information/appli/battlecats/gacha/rare/${rare}${id}.html`
+        `https://ponosgames.com/information/appli/battlecats/gacha/rare/${rare}${ponosId}.html`
     );
 
   await processingMsg.delete().catch(() => void 0);
@@ -283,6 +292,99 @@ async function handleNameSearch(query: string, mode: Mode, message: Message, cha
 }
 
 // ================================
+// o.gt s — スケジュール表示（CSV切替対応）
+// ================================
+async function handleSchedule(message: Message, channel: TextChannel): Promise<void> {
+  const processingMsg = await channel.send("⏳ ガチャスケジュールを取得中...");
+  let json: GachaJson;
+
+  try {
+    json = await fetchGachaJson();
+  } catch {
+    await processingMsg.edit("❌ JSONの取得に失敗しました");
+    return;
+  }
+
+  // R/E/N の CSV を全部ロード
+  const csvR = await fetchCsv(CSV_URL_R).catch(() => null);
+  const csvE = await fetchCsv(CSV_URL_E).catch(() => null);
+  const csvN = await fetchCsv(CSV_URL_N).catch(() => null);
+
+  const now = new Date();
+
+  const blocks = json.data.filter((block) => {
+    const { endDate, endTime } = block.header;
+    if (endDate === "20300101") return false;
+    const end = parseDate(endDate, endTime);
+    return end >= now;
+  });
+
+  blocks.sort((a, b) => {
+    const sa = parseDate(a.header.startDate, a.header.startTime).getTime();
+    const sb = parseDate(b.header.startDate, b.header.startTime).getTime();
+    return sa - sb;
+  });
+
+  if (blocks.length === 0) {
+    await processingMsg.edit("開催中・近日予定のガチャはありません");
+    return;
+  }
+
+  const embeds: EmbedBuilder[] = [];
+  let currentEmbed = new EmbedBuilder()
+    .setTitle("ガチャスケジュール")
+    .setColor(0xf0a500)
+    .setFooter({ text: `更新: ${json.updatedAt}` });
+  let fieldCount = 0;
+
+  for (const block of blocks) {
+    const { header, gachas } = block;
+    const start = parseDate(header.startDate, header.startTime);
+    const end = parseDate(header.endDate, header.endTime);
+    const isActive = start <= now;
+
+    const period = `${formatDate(start)}～${formatDate(end)}`;
+    const ver = `ver.${header.minVersion}～${header.maxVersion}`;
+
+    const lines: string[] = [];
+
+    for (const gacha of gachas) {
+      let name = "不明";
+
+      if (header.gachaType === 1) name = csvR?.byId.get(gacha.id) ?? "不明";
+      if (header.gachaType === 3) name = csvN?.byId.get(gacha.id) ?? "不明";
+      if (header.gachaType === 4) name = csvE?.byId.get(gacha.id) ?? "不明";
+
+      const flag = flagLabel(gacha.flags);
+      const guaranteed = gacha.guaranteed ? "【確定】" : "";
+      const rates = rateStr(gacha.rates);
+
+      lines.push(`・**${gacha.id}** ${name} (pos:${header.gachaCount})`);
+      lines.push(`レート > ${rates}${guaranteed}${flag ? " " + flag : ""}`);
+    }
+
+    const title = `${isActive ? "🟢" : "🔵"} ${period}`;
+    const value = `${ver}\n${lines.join("\n")}`;
+
+    if (fieldCount >= 25) {
+      embeds.push(currentEmbed);
+      currentEmbed = new EmbedBuilder().setColor(0xf0a500);
+      fieldCount = 0;
+    }
+
+    currentEmbed.addFields({ name: title, value, inline: false });
+    fieldCount++;
+  }
+
+  embeds.push(currentEmbed);
+
+  await processingMsg.delete().catch(() => void 0);
+  for (const embed of embeds) {
+    await channel.send({ embeds: [embed] });
+  }
+}
+
+// ================================
 // コマンド本体
 // ================================
 const gt: Command = {
@@ -306,11 +408,12 @@ const gt: Command = {
       return;
     }
 
-    const { mode, query } = detectModeAndQuery(args);
+    const { mode, query, raw } = detectModeAndQuery(args);
 
     const num = parseInt(query);
+
     if (!isNaN(num)) {
-      if (args.includes("r")) {
+      if (raw) {
         await handleRaw(num, message, channel);
         return;
       }
