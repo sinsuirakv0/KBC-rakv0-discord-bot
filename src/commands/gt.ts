@@ -76,7 +76,6 @@ interface GachaEntry {
   rates: GachaRate;
   guaranteed: boolean;
   message?: string;
-  raw?: string;
 }
 interface GachaHeader {
   startDate: string;
@@ -91,6 +90,7 @@ interface GachaHeader {
 interface GachaBlock {
   header: GachaHeader;
   gachas: GachaEntry[];
+  raw?: string; // ← raw は block 直下にある
 }
 interface GachaJson {
   updatedAt: string;
@@ -168,7 +168,7 @@ const fallbackOrder: Record<Mode, Mode[]> = {
 };
 
 // ================================
-// o.gt <ID> r — raw 表示
+// o.gt <ID> r — raw 表示（block.raw）
 // ================================
 async function handleRaw(id: number, message: Message, channel: TextChannel) {
   const processingMsg = await channel.send("⏳ JSONを取得中...");
@@ -187,13 +187,13 @@ async function handleRaw(id: number, message: Message, channel: TextChannel) {
     return;
   }
 
-  const entry = block.gachas.find((g) => g.id === id);
-  if (!entry?.raw) {
+  // raw は block.raw にある
+  if (block.raw == null) {
     await processingMsg.edit("❌ raw データがありません");
     return;
   }
 
-  const formatted = entry.raw.replace(/\t/g, "    ");
+  const formatted = block.raw.replace(/\t/g, "    ");
 
   await processingMsg.delete().catch(() => void 0);
   await channel.send(`\`\`\`\n${formatted}\n\`\`\``);
