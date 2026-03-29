@@ -75,37 +75,22 @@ process.on("unhandledRejection", (err) => {
 client.login(process.env.DISCORD_TOKEN);
 
 
-import { startSaleScheduler } from "./scheduler/saleScheduler";
+import { Client, GatewayIntentBits } from "discord.js";
+import { startSaleScheduler, registerPingCommand } from "./scheduler/saleScheduler";
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
 
 client.once("ready", () => {
+  console.log("Bot ready!");
+
   startSaleScheduler(client, "1446169322392387727");
+  registerPingCommand(client);
 });
-```
 
----
-
-**動作の仕組み**
-
-30秒ごとにチェックし、同じ分は1回だけ処理します。
-
-**リアルタイム通知**（イベント開始時刻ちょうどに発火）
-```
-🔔 イベント開始
-```
-コードブロック：
-```
-100 にゃんチケ★チャンス！ (1h)
-101 極にゃんチケ★チャンス！ (1h)
-```
-1件のみなら `🔔 100 にゃんチケ★チャンス！ (1h)` と1行で。
-
-**毎日22:00 JST** — 翌日のスケジュールをコードブロックで：
-```
-3/30(月) のイベント
-
-[00:00]
-　～24:00 月曜ステージ、...
-[07:00]
-　～08:00 にゃんチケ★チャンス！
-[12:00]
-　～13:00 超ゲリラ経験値にゃ！
+client.login("DISCORD_TOKEN");
