@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { Command } from "./types/Command";
 import { startWebhookServer } from "./utils/webhookServer";
-import { startSaleScheduler, registerPingCommand } from "./scheduler/saleScheduler";
+import { startSaleScheduler } from "./scheduler/saleScheduler";
 
 const PREFIX = "o.";
 
@@ -53,8 +53,7 @@ client.once("ready", () => {
   // スケジューラ
   startSaleScheduler(client, "1446169322392387727");
 
-  // 手動テストコマンド
-  registerPingCommand(client);
+  // ★ registerPingCommand は削除 ★
 });
 
 // ================================
