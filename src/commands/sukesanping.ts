@@ -8,3 +8,4 @@ export const command: Command = {
     await runPingTest(message.client);
   },
 };
+
