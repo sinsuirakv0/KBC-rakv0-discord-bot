@@ -21,7 +21,6 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
   ],
 });
-
 // ================================
 // コマンド読み込み
 // ================================
