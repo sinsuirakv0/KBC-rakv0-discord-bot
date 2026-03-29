@@ -360,12 +360,108 @@ async function handleNameSearch(
 }
 
 // ================================
-// スケジュール表示（変更なし）
+// スケジュール表示ユーティリティ
+// ================================
+function typeTag(gachaType: number): string {
+  if (gachaType === 4) return " <イベント>";
+  if (gachaType === 0) return " <ノーマル>";
+  return "";
+}
+
+function flagShort(flags: number): string {
+  const label = FLAGS_MAP[flags];
+  return label ? ` ${label}` : "";
+}
+
+interface ScheduleEntry {
+  startDate: Date;
+  endDate: Date;
+  id: number;
+  name: string;
+  gachaType: number;
+  flags: number;
+}
+
+async function buildScheduleEntries(
+  csvR: CsvData | null,
+  csvE: CsvData | null,
+  csvN: CsvData | null,
+  json: GachaJson
+): Promise<ScheduleEntry[]> {
+  const now = new Date();
+  const entries: ScheduleEntry[] = [];
+
+  for (const block of json.data) {
+    const { header, gachas } = block;
+    if (header.endDate === "20300101") continue;
+
+    const end = parseDate(header.endDate, header.endTime);
+    if (end < now) continue;
+
+    const start = parseDate(header.startDate, header.startTime);
+
+    for (const gacha of gachas) {
+      if (gacha.id < 0) continue;
+
+      let name = "不明";
+      if (header.gachaType === 1) name = csvR?.byId.get(gacha.id) ?? "不明";
+      else if (header.gachaType === 4) name = csvE?.byId.get(gacha.id) ?? "不明";
+      else name = csvN?.byId.get(gacha.id) ?? "不明";
+
+      entries.push({ startDate: start, endDate: end, id: gacha.id, name, gachaType: header.gachaType, flags: gacha.flags });
+    }
+  }
+
+  // startDate 昇順 → 同 startDate 内は id 昇順
+  entries.sort((a, b) => {
+    const ds = a.startDate.getTime() - b.startDate.getTime();
+    return ds !== 0 ? ds : a.id - b.id;
+  });
+
+  return entries;
+}
+
+function formatScheduleText(entries: ScheduleEntry[]): string {
+  const now = new Date();
+  const lines: string[] = [];
+  let lastDateKey = "";
+
+  // 重複行を避けるため (startDate, id) ペアを追跡
+  const seen = new Set<string>();
+
+  for (const e of entries) {
+    const key = `${e.startDate.getTime()}-${e.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // 日付ヘッダー
+    const jst = new Date(e.startDate.getTime() + 9 * 60 * 60 * 1000);
+    const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(jst.getUTCDate()).padStart(2, "0");
+    const wd = WEEKDAYS[jst.getUTCDay()];
+    const dateKey = `${m}/${d}(${wd})`;
+
+    if (dateKey !== lastDateKey) {
+      const isStarted = e.startDate <= now;
+      lines.push(isStarted ? dateKey : `[${dateKey}]`);
+      lastDateKey = dateKey;
+    }
+
+    const tag = typeTag(e.gachaType);
+    const flag = flagShort(e.flags);
+    lines.push(`  ${String(e.id).padEnd(4)} ${e.name}${tag}${flag}`);
+  }
+
+  return lines.join("\n");
+}
+
+// ================================
+// スケジュール全体表示
 // ================================
 async function handleSchedule(channel: TextChannel): Promise<void> {
   const processingMsg = await channel.send("⏳ ガチャスケジュールを取得中...");
-  let json: GachaJson;
 
+  let json: GachaJson;
   try {
     json = await fetchGachaJson();
   } catch {
@@ -373,81 +469,244 @@ async function handleSchedule(channel: TextChannel): Promise<void> {
     return;
   }
 
-  const csvR = await fetchCsv(CSV_URL_R).catch(() => null);
-  const csvE = await fetchCsv(CSV_URL_E).catch(() => null);
-  const csvN = await fetchCsv(CSV_URL_N).catch(() => null);
+  const [csvR, csvE, csvN] = await Promise.all([
+    fetchCsv(CSV_URL_R).catch(() => null),
+    fetchCsv(CSV_URL_E).catch(() => null),
+    fetchCsv(CSV_URL_N).catch(() => null),
+  ]);
 
-  const now = new Date();
-
-  const blocks = json.data.filter((block) => {
-    const { endDate, endTime } = block.header;
-    if (endDate === "20300101") return false;
-    const end = parseDate(endDate, endTime);
-    return end >= now;
-  });
-
-  blocks.sort((a, b) => {
-    const sa = parseDate(a.header.startDate, a.header.startTime).getTime();
-    const sb = parseDate(b.header.startDate, b.header.startTime).getTime();
-    return sa - sb;
-  });
-
-  if (blocks.length === 0) {
+  const entries = await buildScheduleEntries(csvR, csvE, csvN, json);
+  if (entries.length === 0) {
     await processingMsg.edit("開催中・近日予定のガチャはありません");
     return;
   }
 
-  const embeds: EmbedBuilder[] = [];
-  let currentEmbed = new EmbedBuilder()
-    .setTitle("ガチャスケジュール")
-    .setColor(0xf0a500)
-    .setFooter({ text: `更新: ${json.updatedAt}` });
-  let fieldCount = 0;
+  const fullText = formatScheduleText(entries);
 
-  for (const block of blocks) {
-    const { header, gachas } = block;
-    const start = parseDate(header.startDate, header.startTime);
-    const end = parseDate(header.endDate, header.endTime);
-    const isActive = start <= now;
-    const blockMode = gachaTypeToMode(header.gachaType);
+  // 1800文字でコードブロックチャンク分割
+  const rawLines = fullText.split("\n");
+  const chunks: string[] = [];
+  let current = "";
 
-    const period = `${formatDate(start)}～${formatDate(end)}`;
-    const ver = `ver.${header.minVersion}～${header.maxVersion}`;
-
-    const lines: string[] = [];
-
-    for (const gacha of gachas) {
-      let name = "不明";
-      if (header.gachaType === 1) name = csvR?.byId.get(gacha.id) ?? "不明";
-      else if (header.gachaType === 4) name = csvE?.byId.get(gacha.id) ?? "不明";
-      else name = csvN?.byId.get(gacha.id) ?? "不明";
-
-      const flag = flagLabel(gacha.flags);
-      const guaranteed = gacha.guaranteed ? "【確定】" : "";
-      const rates = rateStr(gacha.rates);
-
-      lines.push(`・**${gacha.id}** [${blockMode}] ${name} (pos:${header.gachaCount})`);
-      lines.push(`レート > ${rates}${guaranteed}${flag ? " " + flag : ""}`);
+  for (const line of rawLines) {
+    const addition = current ? "\n" + line : line;
+    if ((current + addition).length > 1800) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = current ? current + "\n" + line : line;
     }
-
-    const title = `${isActive ? "🟢" : "🔵"} ${period}`;
-    const value = `${ver}\n${lines.join("\n")}`;
-
-    if (fieldCount >= 25) {
-      embeds.push(currentEmbed);
-      currentEmbed = new EmbedBuilder().setColor(0xf0a500);
-      fieldCount = 0;
-    }
-
-    currentEmbed.addFields({ name: title, value, inline: false });
-    fieldCount++;
   }
-
-  embeds.push(currentEmbed);
+  if (current) chunks.push(current);
 
   await processingMsg.delete().catch(() => void 0);
-  for (const embed of embeds) {
-    await channel.send({ embeds: [embed] });
+  for (const chunk of chunks) {
+    await channel.send("```\n" + chunk + "\n```");
+  }
+}
+
+// ================================
+// スケジュール内 ID詳細検索
+// ================================
+function getCsvForBlock(gachaType: number, csvR: CsvData | null, csvE: CsvData | null, csvN: CsvData | null): CsvData | null {
+  if (gachaType === 1) return csvR;
+  if (gachaType === 4) return csvE;
+  return csvN;
+}
+
+function formatGachaTypeLabel(gachaType: number): string {
+  if (gachaType === 4) return " (イベントガチャ)";
+  if (gachaType === 0) return " (ノーマルガチャ)";
+  return "";
+}
+
+async function handleScheduleIdDetail(
+  id: number,
+  mode: Mode | null,
+  channel: TextChannel
+): Promise<void> {
+  const processingMsg = await channel.send("⏳ 検索中...");
+
+  let json: GachaJson;
+  try {
+    json = await fetchGachaJson();
+  } catch {
+    await processingMsg.edit("❌ JSONの取得に失敗しました");
+    return;
+  }
+
+  const [csvR, csvE, csvN] = await Promise.all([
+    fetchCsv(CSV_URL_R).catch(() => null),
+    fetchCsv(CSV_URL_E).catch(() => null),
+    fetchCsv(CSV_URL_N).catch(() => null),
+  ]);
+
+  // mode 指定があれば gachaType でフィルター
+  const modeMatchesType = (gachaType: number): boolean => {
+    if (!mode) return true;
+    if (mode === "R") return gachaType === 1;
+    if (mode === "E") return gachaType === 4;
+    if (mode === "N") return gachaType === 0;
+    return true;
+  };
+
+  const blocks = json.data.filter(
+    (block) => modeMatchesType(block.header.gachaType) && block.gachas.some((g) => g.id === id)
+  );
+
+  if (blocks.length === 0) {
+    await processingMsg.edit(`❌ ID \`${id}\` はガチャjsonに含まれていません`);
+    return;
+  }
+
+  await processingMsg.delete().catch(() => void 0);
+
+  for (const block of blocks) {
+    const { header } = block;
+    const gacha = block.gachas.find((g) => g.id === id)!;
+    const isPerm = header.endDate === "20300101";
+    const start = parseDate(header.startDate, header.startTime);
+    const end = isPerm ? null : parseDate(header.endDate, header.endTime);
+
+    const csv = getCsvForBlock(header.gachaType, csvR, csvE, csvN);
+    const name = csv?.byId.get(id) ?? "不明";
+
+    const period = isPerm
+      ? `${formatDate(start)} ～ 常設`
+      : `${formatDate(start)} ～ ${formatDate(end!)}`;
+    const ver = `ver.${header.minVersion}～${header.maxVersion}`;
+    const flagStr = flagLabel(gacha.flags) ? " " + flagLabel(gacha.flags) : "";
+    const guaranteedStr = gacha.guaranteed ? " 【確定】" : "";
+    const typeStr = formatGachaTypeLabel(header.gachaType);
+
+    const lines: string[] = [
+      `${period}  ${ver}`,
+      ` ${id} ${name}${flagStr}${guaranteedStr}${typeStr}`,
+      `レート: ${rateStr(gacha.rates)}`,
+    ];
+    if (gacha.message) lines.push(`メッセージ: ${gacha.message}`);
+
+    await channel.send("```\n" + lines.join("\n") + "\n```");
+  }
+}
+
+// ================================
+// スケジュール内 名前検索
+// ================================
+async function handleScheduleSearch(
+  query: string,
+  mode: Mode | null,
+  channel: TextChannel
+): Promise<void> {
+  const processingMsg = await channel.send("⏳ 検索中...");
+
+  let json: GachaJson;
+  try {
+    json = await fetchGachaJson();
+  } catch {
+    await processingMsg.edit("❌ JSONの取得に失敗しました");
+    return;
+  }
+
+  const [csvR, csvE, csvN] = await Promise.all([
+    fetchCsv(CSV_URL_R).catch(() => null),
+    fetchCsv(CSV_URL_E).catch(() => null),
+    fetchCsv(CSV_URL_N).catch(() => null),
+  ]);
+
+  const allEntries = await buildScheduleEntries(csvR, csvE, csvN, json);
+
+  const modeMatchesType = (gachaType: number): boolean => {
+    if (!mode) return true;
+    if (mode === "R") return gachaType === 1;
+    if (mode === "E") return gachaType === 4;
+    if (mode === "N") return gachaType === 0;
+    return true;
+  };
+
+  const matched = allEntries.filter(
+    (e) => modeMatchesType(e.gachaType) && e.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  if (matched.length === 0) {
+    await processingMsg.edit(`❌ スケジュール内に \`${query}\` は見つかりませんでした`);
+    return;
+  }
+
+  const text = formatScheduleText(matched);
+  await processingMsg.delete().catch(() => void 0);
+  await channel.send("```\n" + text + "\n```");
+}
+
+// ================================
+// スケジュール JSON表示
+// ================================
+async function handleScheduleJson(id: number, channel: TextChannel): Promise<void> {
+  const processingMsg = await channel.send("⏳ JSONを取得中...");
+
+  let json: GachaJson;
+  try {
+    json = await fetchGachaJson();
+  } catch {
+    await processingMsg.edit("❌ JSONの取得に失敗しました");
+    return;
+  }
+
+  const blocks = json.data.filter((b) => b.gachas.some((g) => g.id === id));
+  if (blocks.length === 0) {
+    await processingMsg.edit(`❌ ID \`${id}\` はガチャjsonに含まれていません`);
+    return;
+  }
+
+  await processingMsg.delete().catch(() => void 0);
+
+  for (const block of blocks) {
+    // raw フィールドを除いて表示
+    const { raw: _raw, ...blockData } = block;
+    const formatted = JSON.stringify(blockData, null, 2);
+    // 1900文字でチャンク分割
+    const lines2 = formatted.split("\n");
+    const chunks2: string[] = [];
+    let cur = "";
+    for (const ln of lines2) {
+      const add = cur ? "\n" + ln : ln;
+      if ((cur + add).length > 1900) { chunks2.push(cur); cur = ln; }
+      else { cur = cur ? cur + "\n" + ln : ln; }
+    }
+    if (cur) chunks2.push(cur);
+    for (const c of chunks2) await channel.send("```json\n" + c + "\n```");
+  }
+}
+
+// ================================
+// スケジュール Raw表示
+// ================================
+async function handleScheduleRaw(id: number, channel: TextChannel): Promise<void> {
+  const processingMsg = await channel.send("⏳ JSONを取得中...");
+
+  let json: GachaJson;
+  try {
+    json = await fetchGachaJson();
+  } catch {
+    await processingMsg.edit("❌ JSONの取得に失敗しました");
+    return;
+  }
+
+  const blocks = json.data.filter((b) => b.gachas.some((g) => g.id === id));
+  if (blocks.length === 0) {
+    await processingMsg.edit(`❌ ID \`${id}\` はガチャjsonに含まれていません`);
+    return;
+  }
+
+  await processingMsg.delete().catch(() => void 0);
+
+  for (const block of blocks) {
+    if (!block.raw) {
+      await channel.send(`❌ (startDate: ${block.header.startDate}) に raw データがありません`);
+      continue;
+    }
+    const formatted = block.raw.replace(/\t/g, "    ");
+    await channel.send("```\n" + formatted + "\n```");
   }
 }
 
@@ -458,11 +717,15 @@ const gt: Command = {
   name: "gt",
   description: "ガチャ検索・スケジュール表示",
   usage: [
-    "o.gt <名前>          : 全レアリティから名前検索",
-    "o.gt R|N|E <名前>    : レアリティ指定で名前検索",
-    "o.gt <番号>          : 全レアリティからID検索",
-    "o.gt R|N|E <番号>    : レアリティ指定でID検索",
-    "o.gt s               : ガチャスケジュール表示",
+    "o.gt <名前>                    : 全レアリティから名前検索",
+    "o.gt R|N|E <名前>              : レアリティ指定で名前検索",
+    "o.gt <番号>                    : 全レアリティからID検索",
+    "o.gt R|N|E <番号>              : レアリティ指定でID検索",
+    "o.gt s                         : ガチャスケジュール一覧",
+    "o.gt s [R|N|E] <番号>          : スケジュール内ID詳細",
+    "o.gt s [R|N|E] <名前>          : スケジュール内名前検索",
+    "o.gt s <番号> j|json           : JSON表示",
+    "o.gt s <番号> r                : Raw表示",
   ].join("\n"),
 
   async execute(message: Message, args: string[]): Promise<void> {
@@ -476,7 +739,10 @@ const gt: Command = {
           "　`o.gt R|N|E <名前>` — レアリティ指定で名前検索",
           "　`o.gt <番号>` — 全レアリティからID検索",
           "　`o.gt R|N|E <番号>` — レアリティ指定でID検索",
-          "　`o.gt s` — スケジュール表示",
+          "　`o.gt s` — スケジュール一覧",
+          "　`o.gt s [R|N|E] <番号>` — スケジュール内ID詳細",
+          "　`o.gt s [R|N|E] <名前>` — スケジュール内名前検索",
+          "　`o.gt s <番号> j` — JSON表示 / `r` — Raw表示",
         ].join("\n")
       );
       setTimeout(() => err.delete().catch(() => void 0), 12_000);
@@ -485,7 +751,60 @@ const gt: Command = {
 
     // スケジュール
     if (args[0] === "s") {
-      await handleSchedule(channel);
+      const rest = args.slice(1);
+
+      if (rest.length === 0) {
+        // o.gt s
+        await handleSchedule(channel);
+        return;
+      }
+
+      // o.gt s <id> j / json → JSON表示
+      const last = rest[rest.length - 1].toLowerCase();
+      if ((last === "j" || last === "json") && rest.length >= 2) {
+        const idStr = rest[rest.length - 2];
+        const idNum = parseInt(idStr);
+        if (!isNaN(idNum) && String(idNum) === idStr) {
+          await handleScheduleJson(idNum, channel);
+          return;
+        }
+      }
+
+      // o.gt s <id> r → Raw表示
+      if (last === "r" && rest.length >= 2) {
+        const idStr = rest[rest.length - 2];
+        const idNum = parseInt(idStr);
+        if (!isNaN(idNum) && String(idNum) === idStr) {
+          await handleScheduleRaw(idNum, channel);
+          return;
+        }
+      }
+
+      // モード解析
+      const firstUpper = rest[0].toUpperCase();
+      let schedMode: Mode | null = null;
+      let queryArgs = rest;
+      if (firstUpper === "R" || firstUpper === "N" || firstUpper === "E") {
+        schedMode = firstUpper as Mode;
+        queryArgs = rest.slice(1);
+      }
+
+      if (queryArgs.length === 0) {
+        await handleSchedule(channel);
+        return;
+      }
+
+      const schedQuery = queryArgs.join(" ");
+      const schedNum = parseInt(schedQuery);
+
+      // o.gt s [mode] <id> → ID詳細
+      if (!isNaN(schedNum) && String(schedNum) === schedQuery.trim()) {
+        await handleScheduleIdDetail(schedNum, schedMode, channel);
+        return;
+      }
+
+      // o.gt s [mode] <name> → 名前検索（スケジュール形式）
+      await handleScheduleSearch(schedQuery, schedMode, channel);
       return;
     }
 
