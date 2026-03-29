@@ -14,3 +14,4 @@ const sukesanping: Command = {
 };
 
 module.exports = sukesanping;
+
