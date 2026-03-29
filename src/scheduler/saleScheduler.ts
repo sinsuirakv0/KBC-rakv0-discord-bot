@@ -30,7 +30,7 @@ interface SaleHeader {
 }
 
 interface DateRange {
-  start: string;
+  start: string; // "MMDD HHMM" 形式
   end: string;
 }
 
@@ -80,17 +80,27 @@ async function loadData(): Promise<void> {
 }
 
 // ================================
-// JST 時刻ユーティリティ
+// 時刻ユーティリティ（すべてJST）
 // ================================
+
+/**
+ * JST の現在時刻を返す（getUTC* でJST値を得る擬似Dateオブジェクト）
+ */
 function nowJST(): Date {
   return new Date(Date.now() + JST_MS);
 }
 
+/**
+ * "700" → 420, "1300" → 780, "2400" → 1440 (分単位)
+ */
 function parseTimeMin(s: string): number {
   const p = s.padStart(4, "0");
   return parseInt(p.slice(0, 2)) * 60 + parseInt(p.slice(2, 4));
 }
 
+/**
+ * ヘッダーの日付文字列をDateに変換（JST基準）
+ */
 function parseHeaderDate(dateStr: string, timeStr: string): Date {
   const d = dateStr.padStart(8, "0");
   const t = timeStr.padStart(4, "0");
@@ -99,21 +109,34 @@ function parseHeaderDate(dateStr: string, timeStr: string): Date {
   );
 }
 
+/**
+ * ヘッダーの有効期間内か（リアルUTCで比較）
+ */
 function isHeaderActive(header: SaleHeader, realNow: Date): boolean {
   const start = parseHeaderDate(header.startDate, header.startTime);
   const end = parseHeaderDate(header.endDate, header.endTime);
   return realNow >= start && realNow < end;
 }
 
+/**
+ * 日別スケジュール表示用：その日（JST noon）でヘッダーが有効か
+ * targetJst: getUTC* がJST値を返す擬似Date（時刻は 00:00 を想定）
+ */
 function isHeaderActiveOnDay(header: SaleHeader, targetJst: Date): boolean {
+  // JST 正午 = 実際のUTC 03:00
   const noonReal = new Date(targetJst.getTime() + 12 * 60 * 60 * 1000 - JST_MS);
   return noonReal >= parseHeaderDate(header.startDate, header.startTime) &&
          noonReal < parseHeaderDate(header.endDate, header.endTime);
 }
 
 // ================================
-// dateRange 判定
+// dateRange パース
 // ================================
+
+/**
+ * "MMDD HHMM" 形式のdateRangeポイントを比較用数値に変換
+ * 例: "116 1100" → 月1 日16 分660 → 1*100000 + 16*1440 + 660
+ */
 function parseDRPValue(s: string): number {
   const parts = s.trim().split(" ");
   const mmdd = parts[0].padStart(4, "0");
@@ -130,14 +153,20 @@ function matchesDateRange(range: DateRange, jst: Date): boolean {
   const curr = month * 100000 + day * 1440 + mins;
   const s = parseDRPValue(range.start);
   const e = parseDRPValue(range.end);
+  // 年をまたぐ場合（例: 12月→1月）
   return s <= e ? curr >= s && curr < e : curr >= s || curr < e;
 }
 
 // ================================
 // timeBlock 条件判定
 // ================================
+
+/**
+ * timeBlock の「日」条件がこのJST日時に合致するか
+ */
 function matchesDayCondition(block: TimeBlock, jst: Date): boolean {
   const { weekdays, monthDays, dateRanges } = block;
+  // 条件なし = 常に合致
   if (weekdays.length === 0 && monthDays.length === 0 && dateRanges.length === 0) return true;
   if (weekdays.length > 0 && weekdays.some((w) => WEEKDAY_MAP[w] === jst.getUTCDay())) return true;
   if (monthDays.length > 0 && monthDays.includes(jst.getUTCDate())) return true;
@@ -174,7 +203,7 @@ function formatDuration(startM: number, endM: number): string {
 }
 
 // ================================
-// リアルタイム通知（現在時刻）
+// リアルタイム通知: 現在時刻に開始するイベントを検索
 // ================================
 interface StartingItem {
   id: number;
@@ -184,28 +213,22 @@ interface StartingItem {
 }
 
 function findStartingNow(jst: Date): StartingItem[] {
-  const currMin = jst.getUTCHours() * 60 + jst.getUTCMinutes();
-  return findStartingAt(jst, currMin);
-}
-
-// ================================
-// 任意の分で開始するイベントを検索（0:00 用）
-// ================================
-function findStartingAt(jst: Date, targetMin: number): StartingItem[] {
   if (!saleJson) return [];
 
   const realNow = new Date(jst.getTime() - JST_MS);
+  const currMin = jst.getUTCHours() * 60 + jst.getUTCMinutes();
   const results: StartingItem[] = [];
 
   for (const entry of saleJson.data) {
     if (!isHeaderActive(entry.header, realNow)) continue;
-    if (entry.timeBlocks.length === 0) continue;
+    if (entry.timeBlocks.length === 0) continue; // 時間条件なし = 常時開催、通知不要
 
     for (const block of entry.timeBlocks) {
       if (!matchesDayCondition(block, jst)) continue;
 
       if (block.timeRanges.length === 0) {
-        if (targetMin === 0) {
+        // 時間帯なし = 該当曜日/日付の終日開催 → 00:00 に通知
+        if (currMin === 0) {
           for (const id of entry.stageIds.filter((id) => id >= 0)) {
             const name = nameMap.get(id);
             if (name) results.push({ id, name, startMin: 0, endMin: 1440 });
@@ -215,7 +238,7 @@ function findStartingAt(jst: Date, targetMin: number): StartingItem[] {
         for (const [sStr, eStr] of block.timeRanges) {
           const sMin = parseTimeMin(sStr);
           const eMin = parseTimeMin(eStr);
-          if (sMin === targetMin) {
+          if (sMin === currMin) {
             for (const id of entry.stageIds.filter((id) => id >= 0)) {
               const name = nameMap.get(id);
               if (name) results.push({ id, name, startMin: sMin, endMin: eMin });
@@ -226,6 +249,7 @@ function findStartingAt(jst: Date, targetMin: number): StartingItem[] {
     }
   }
 
+  // (id, startMin, endMin) で重複排除
   const seen = new Set<string>();
   return results.filter((item) => {
     const key = `${item.id}-${item.startMin}-${item.endMin}`;
@@ -279,6 +303,7 @@ function buildDaySchedule(targetJst: Date): ScheduleSlot[] {
 function buildDailyText(targetJst: Date): string {
   const slots = buildDaySchedule(targetJst);
 
+  // startMin → endMin → names のマップ（重複名を除去）
   const byStart = new Map<number, Map<number, Set<string>>>();
   for (const slot of slots) {
     if (!byStart.has(slot.startMin)) byStart.set(slot.startMin, new Map());
@@ -311,6 +336,12 @@ function buildDailyText(targetJst: Date): string {
 // ================================
 // スケジューラ本体
 // ================================
+
+/**
+ * セールスケジューラを起動する
+ * @param client Discord.js クライアント
+ * @param channelId 通知先チャンネルID
+ */
 export function startSaleScheduler(client: Client, channelId: string): void {
   let lastCheckedMinute = -1;
 
@@ -319,17 +350,19 @@ export function startSaleScheduler(client: Client, channelId: string): void {
       const jst = nowJST();
       const currMin = jst.getUTCHours() * 60 + jst.getUTCMinutes();
 
+      // 同じ分は1回だけ処理
       if (currMin === lastCheckedMinute) return;
       lastCheckedMinute = currMin;
 
+      // 毎時00分にデータ再取得
       if (jst.getUTCMinutes() === 0 || !saleJson) {
         await loadData().catch((e) => console.error("[Sale] データ取得エラー:", e));
       }
 
-      const ch = client.channels.cache.get(channelId);
-      if (!ch || ch.type !== 0) return;
-      const channel = ch as TextChannel;
+      const channel = client.channels.cache.get(channelId) as TextChannel | undefined;
+      if (!channel) return;
 
+      // 22:00 JST: 翌日のスケジュールを投稿
       if (jst.getUTCHours() === 22 && jst.getUTCMinutes() === 0) {
         const tomorrow = new Date(jst.getTime());
         tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
@@ -338,6 +371,7 @@ export function startSaleScheduler(client: Client, channelId: string): void {
         await channel.send("```\n" + text + "\n```").catch(console.error);
       }
 
+      // リアルタイム通知
       const starting = findStartingNow(jst);
       if (starting.length === 0) return;
 
@@ -358,46 +392,10 @@ export function startSaleScheduler(client: Client, channelId: string): void {
     }
   };
 
+  // 起動時にデータ読み込み
   loadData().catch((e) => console.error("[Sale] 初期データ取得エラー:", e));
 
+  // 30秒ごとにチェック（1分あたり最大2回だが、lastCheckedMinuteで重複防止）
   setInterval(tick, 30_000);
-  tick();
+  tick(); // 即時実行
 }
-
-// ================================
-// 手動テストコマンド（o.sukesanping）
-// ================================
-export async function runPingTest(client: Client) {
-  const ch = client.channels.cache.get("1446169322392387727");
-  if (!ch || ch.type !== 0) return;
-  const channel = ch as TextChannel;
-
-  const jst = nowJST();
-
-  // 翌日スケジュール
-  const tomorrow = new Date(jst.getTime());
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  tomorrow.setUTCHours(0, 0, 0, 0);
-
-  const dailyText = buildDailyText(tomorrow);
-  await channel.send("【手動テスト】翌日スケジュール\n```\n" + dailyText + "\n```");
-
-  // 0:00 開始イベント
-  const startingAtMidnight = findStartingAt(jst, 0);
-
-  if (startingAtMidnight.length === 0) {
-    await channel.send("【手動テスト】0:00 に開始するイベントはありません");
-  } else {
-    const lines = startingAtMidnight.map(
-      (item) =>
-        `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
-    );
-
-    if (lines.length === 1) {
-      await channel.send(`【手動テスト】🔔 ${lines[0]}`);
-    } else {
-      await channel.send("【手動テスト】🔔 0:00 開始イベント\n```\n" + lines.join("\n") + "\n```");
-    }
-  }
-}
-
