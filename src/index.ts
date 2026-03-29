@@ -30,7 +30,7 @@ const commands = new Collection<string, Command>();
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
   .readdirSync(commandsPath)
-  .filter((f) => f.endsWith(".js"));
+  .filter((f) => f.endsWith(".js") || f.endsWith(".ts"));
 
 for (const file of commandFiles) {
   const command: Command = require(path.join(commandsPath, file));
