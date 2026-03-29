@@ -367,39 +367,36 @@ export function startSaleScheduler(client: Client, channelId: string): void {
 // ================================
 // 手動テストコマンド（o.sukesanping）
 // ================================
-export function registerPingCommand(client: Client) {
-  client.on("messageCreate", async (msg) => {
-    if (msg.author.bot) return;
-    if (msg.content !== "o.sukesanping") return;
+export async function runPingTest(client: Client) {
+  const ch = client.channels.cache.get("1446169322392387727");
+  if (!ch || ch.type !== 0) return;
+  const channel = ch as TextChannel;
 
-    const ch = client.channels.cache.get("1446169322392387727");
-    if (!ch || ch.type !== 0) return;
-    const channel = ch as TextChannel;
+  const jst = nowJST();
 
-    const jst = nowJST();
+  // 翌日スケジュール
+  const tomorrow = new Date(jst.getTime());
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  tomorrow.setUTCHours(0, 0, 0, 0);
 
-    const tomorrow = new Date(jst.getTime());
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    tomorrow.setUTCHours(0, 0, 0, 0);
+  const dailyText = buildDailyText(tomorrow);
+  await channel.send("【手動テスト】翌日スケジュール\n```\n" + dailyText + "\n```");
 
-    const dailyText = buildDailyText(tomorrow);
-    await channel.send("【手動テスト】翌日スケジュール\n```\n" + dailyText + "\n```");
+  // 0:00 開始イベント
+  const startingAtMidnight = findStartingAt(jst, 0);
 
-    const startingAtMidnight = findStartingAt(jst, 0);
+  if (startingAtMidnight.length === 0) {
+    await channel.send("【手動テスト】0:00 に開始するイベントはありません");
+  } else {
+    const lines = startingAtMidnight.map(
+      (item) =>
+        `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
+    );
 
-    if (startingAtMidnight.length === 0) {
-      await channel.send("【手動テスト】0:00 に開始するイベントはありません");
+    if (lines.length === 1) {
+      await channel.send(`【手動テスト】🔔 ${lines[0]}`);
     } else {
-      const lines = startingAtMidnight.map(
-        (item) =>
-          `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
-      );
-
-      if (lines.length === 1) {
-        await channel.send(`【手動テスト】🔔 ${lines[0]}`);
-      } else {
-        await channel.send("【手動テスト】🔔 0:00 開始イベント\n```\n" + lines.join("\n") + "\n```");
-      }
+      await channel.send("【手動テスト】🔔 0:00 開始イベント\n```\n" + lines.join("\n") + "\n```");
     }
-  });
+  }
 }
