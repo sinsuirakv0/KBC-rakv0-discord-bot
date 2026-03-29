@@ -9,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { Command } from "./types/Command";
 import { startWebhookServer } from "./utils/webhookServer";
+import { startSaleScheduler, registerPingCommand } from "./scheduler/saleScheduler";
 
 const PREFIX = "o.";
 
@@ -21,26 +22,44 @@ const client = new Client({
   ],
 });
 
+// ================================
+// コマンド読み込み
+// ================================
 const commands = new Collection<string, Command>();
 (client as typeof client & { commands: Collection<string, Command> }).commands = commands;
 
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
   .readdirSync(commandsPath)
-  .filter((f) => f.endsWith(".js") || f.endsWith(".ts"));
+  .filter((f) => f.endsWith(".js"));
 
 for (const file of commandFiles) {
   const command: Command = require(path.join(commandsPath, file));
   commands.set(command.name, command);
 }
 
+// ================================
+// 起動時
+// ================================
 client.once("ready", () => {
   console.log("Logged in as " + client.user?.tag);
   console.log("Prefix: " + PREFIX);
+
   client.user?.setActivity(PREFIX + "help でコマンド一覧", { type: 0 });
+
+  // Webhook サーバー
   startWebhookServer(client);
+
+  // スケジューラ
+  startSaleScheduler(client, "1446169322392387727");
+
+  // 手動テストコマンド
+  registerPingCommand(client);
 });
 
+// ================================
+// メッセージコマンド
+// ================================
 client.on("messageCreate", async (message: Message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
@@ -55,7 +74,7 @@ client.on("messageCreate", async (message: Message) => {
 
   if (!command) {
     await message.reply(
-      "❓ `" + PREFIX + commandName + "` は存在しないコマンドです。`" + PREFIX + "help` でコマンド一覧を確認してください。"
+      `❓ \`${PREFIX}${commandName}\` は存在しないコマンドです。\`${PREFIX}help\` でコマンド一覧を確認してください。`
     );
     return;
   }
@@ -68,29 +87,14 @@ client.on("messageCreate", async (message: Message) => {
   }
 });
 
+// ================================
+// エラー処理
+// ================================
 process.on("unhandledRejection", (err) => {
   console.error("[unhandledRejection]", err);
 });
 
+// ================================
+// ログイン
+// ================================
 client.login(process.env.DISCORD_TOKEN);
-
-
-import { Client, GatewayIntentBits } from "discord.js";
-import { startSaleScheduler, registerPingCommand } from "./scheduler/saleScheduler";
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-
-client.once("ready", () => {
-  console.log("Bot ready!");
-
-  startSaleScheduler(client, "1446169322392387727");
-  registerPingCommand(client);
-});
-
-client.login("DISCORD_TOKEN");
