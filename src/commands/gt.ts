@@ -23,14 +23,12 @@ const FLAGS_MAP: Record<number, string> = {
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
-// gachaType → Mode 対応
-const GACHA_TYPE_TO_MODE: Record<number, Mode> = {
-  0: "N",
-  1: "R",
-  2: "N",
-  3: "N",
-  4: "E",
-};
+// gachaType → Mode 対応（2/3は無視）
+function gachaTypeToMode(gachaType: number): Mode {
+  if (gachaType === 1) return "R";
+  if (gachaType === 4) return "E";
+  return "N";
+}
 
 // ================================
 // CSV パース
@@ -155,7 +153,7 @@ function csvUrlForMode(mode: Mode): string {
 // ================================
 function ponosLink(mode: Mode, id: number): string {
   if (mode === "R") {
-    return `https://ponosgames.com/information/appli/battlecats/gacha/rare/R${String(id).padStart(4, "0")}.html`;
+    return `https://ponosgames.com/information/appli/battlecats/gacha/rare/R${String(id).padStart(3, "0")}.html`;
   }
   if (mode === "N") {
     return `https://ponosgames.com/information/appli/battlecats/gacha/normal/N${String(id).padStart(3, "0")}.html`;
@@ -206,46 +204,59 @@ function parseArgs(args: string[]): { mode: Mode | null; query: string } {
 }
 
 // ================================
-// ID検索（レアリティ必須）
+// ID検索（レアリティ未指定なら全CSV検索）
 // ================================
 async function handleIdSearch(
   id: number,
-  mode: Mode,
+  mode: Mode | null,
   channel: TextChannel
 ): Promise<void> {
   const processingMsg = await channel.send("⏳ 検索中...");
 
-  const [csv, json] = await Promise.all([
-    fetchCsv(csvUrlForMode(mode)).catch(() => null),
+  const modesToSearch: Mode[] = mode ? [mode] : ["R", "N", "E"];
+
+  const [csvEntries, json] = await Promise.all([
+    Promise.all(
+      modesToSearch.map((m) =>
+        fetchCsv(csvUrlForMode(m))
+          .then((csv) => ({ mode: m, csv }))
+          .catch(() => null)
+      )
+    ),
     fetchGachaJson().catch(() => null),
   ]);
 
-  if (!csv) {
-    await processingMsg.edit("❌ CSVの取得に失敗しました");
-    return;
+  const found: { mode: Mode; name: string }[] = [];
+  for (const entry of csvEntries) {
+    if (!entry) continue;
+    const name = entry.csv.byId.get(id);
+    if (name) found.push({ mode: entry.mode, name });
   }
 
-  const name = csv.byId.get(id);
-  if (!name) {
-    await processingMsg.edit(`❌ [${mode}] ID \`${id}\` は見つかりませんでした`);
+  if (found.length === 0) {
+    const label = mode ? `[${mode}] ` : "";
+    await processingMsg.edit(`❌ ${label}ID \`${id}\` は見つかりませんでした`);
     return;
   }
-
-  const active = json ? activeLabel(id, json) : "";
-  const pLink = ponosLink(mode, id);
-  const jLink = jdbLink(mode, id);
-
-  const embed = new EmbedBuilder()
-    .setTitle(`[${mode}] ${id} ${name}${active}`)
-    .setColor(0x5865f2)
-    .setDescription(`${pLink}\n${jLink}`);
 
   await processingMsg.delete().catch(() => void 0);
-  await channel.send({ embeds: [embed] });
+
+  for (const { mode: m, name } of found) {
+    const active = json ? activeLabel(id, json) : "";
+    const pLink = ponosLink(m, id);
+    const jLink = jdbLink(m, id);
+
+    const embed = new EmbedBuilder()
+      .setTitle(`[${m}] ${id} ${name}${active}`)
+      .setColor(0x5865f2)
+      .setDescription(`${pLink}\n${jLink}`);
+
+    await channel.send({ embeds: [embed] });
+  }
 }
 
 // ================================
-// 名前検索（モード指定なしで全CSV検索）
+// 名前検索（モード指定なしで全CSV検索、同名グループ化）
 // ================================
 interface SearchResult {
   mode: Mode;
@@ -293,22 +304,38 @@ async function handleNameSearch(
     return;
   }
 
-  // ID ごとの行を生成
-  // 同じ名前が複数モードにある場合は別々に表示
-  const lines: string[] = [];
+  // 同名グループ化: "name|mode" をキーにまとめる
+  const grouped = new Map<string, SearchResult>();
   for (const r of results) {
-    const idLines = r.ids.map((id) => {
+    const key = `${r.mode}|${r.name}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, { mode: r.mode, name: r.name, ids: [] });
+    }
+    grouped.get(key)!.ids.push(...r.ids);
+  }
+
+  // グループごとに「名前ヘッダー + ID一覧」の形式で行を作る
+  const lines: string[] = [];
+  const totalIds = Array.from(grouped.values()).reduce((acc, r) => acc + r.ids.length, 0);
+
+  for (const r of grouped.values()) {
+    // グループヘッダー
+    lines.push(`**[${r.mode}] ${r.name}**`);
+    // ID一覧（開催中ラベル付き）
+    const idParts = r.ids.map((id) => {
       const active = json ? activeLabel(id, json) : "";
-      return `\`[${r.mode}]\` **${id}** ${r.name}${active}`;
+      return `${id}${active}`;
     });
-    lines.push(...idLines);
+    lines.push(idParts.join("　"));
+    lines.push(""); // 空行で区切り
   }
 
   // 1800文字制限でチャンク分割
   const chunks: string[] = [];
   let current = "";
   for (const line of lines) {
-    if ((current + "\n" + line).length > 1800) {
+    const addition = current ? "\n" + line : line;
+    if ((current + addition).length > 1800) {
       chunks.push(current);
       current = line;
     } else {
@@ -324,7 +351,7 @@ async function handleNameSearch(
       .setColor(0x5865f2)
       .setTitle(
         i === 0
-          ? `🔍 「${query}」の検索結果 (${lines.length}件)`
+          ? `🔍 「${query}」の検索結果 (${totalIds}件)`
           : `🔍 続き`
       )
       .setDescription(chunks[i]);
@@ -382,7 +409,7 @@ async function handleSchedule(channel: TextChannel): Promise<void> {
     const start = parseDate(header.startDate, header.startTime);
     const end = parseDate(header.endDate, header.endTime);
     const isActive = start <= now;
-    const blockMode = GACHA_TYPE_TO_MODE[header.gachaType] ?? "R";
+    const blockMode = gachaTypeToMode(header.gachaType);
 
     const period = `${formatDate(start)}～${formatDate(end)}`;
     const ver = `ver.${header.minVersion}～${header.maxVersion}`;
@@ -392,7 +419,6 @@ async function handleSchedule(channel: TextChannel): Promise<void> {
     for (const gacha of gachas) {
       let name = "不明";
       if (header.gachaType === 1) name = csvR?.byId.get(gacha.id) ?? "不明";
-      else if (header.gachaType === 3) name = csvN?.byId.get(gacha.id) ?? "不明";
       else if (header.gachaType === 4) name = csvE?.byId.get(gacha.id) ?? "不明";
       else name = csvN?.byId.get(gacha.id) ?? "不明";
 
@@ -434,6 +460,7 @@ const gt: Command = {
   usage: [
     "o.gt <名前>          : 全レアリティから名前検索",
     "o.gt R|N|E <名前>    : レアリティ指定で名前検索",
+    "o.gt <番号>          : 全レアリティからID検索",
     "o.gt R|N|E <番号>    : レアリティ指定でID検索",
     "o.gt s               : ガチャスケジュール表示",
   ].join("\n"),
@@ -447,6 +474,7 @@ const gt: Command = {
           "❌ 使い方:",
           "　`o.gt <名前>` — 全レアリティから名前検索",
           "　`o.gt R|N|E <名前>` — レアリティ指定で名前検索",
+          "　`o.gt <番号>` — 全レアリティからID検索",
           "　`o.gt R|N|E <番号>` — レアリティ指定でID検索",
           "　`o.gt s` — スケジュール表示",
         ].join("\n")
@@ -471,15 +499,8 @@ const gt: Command = {
 
     const num = parseInt(query);
 
-    // 数値 → ID検索（レアリティ必須）
+    // 数値 → ID検索（レアリティ未指定なら全CSV）
     if (!isNaN(num) && String(num) === query.trim()) {
-      if (!mode) {
-        const err = await channel.send(
-          "❌ ID検索はレアリティの指定が必要です\n例: `o.gt R 942` / `o.gt N 3` / `o.gt E 47`"
-        );
-        setTimeout(() => err.delete().catch(() => void 0), 10_000);
-        return;
-      }
       await handleIdSearch(num, mode, channel);
       return;
     }
