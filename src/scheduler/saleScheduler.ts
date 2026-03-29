@@ -189,7 +189,7 @@ function findStartingNow(jst: Date): StartingItem[] {
 }
 
 // ================================
-// 🆕 任意の分で開始するイベントを検索（0:00 用）
+// 任意の分で開始するイベントを検索（0:00 用）
 // ================================
 function findStartingAt(jst: Date, targetMin: number): StartingItem[] {
   if (!saleJson) return [];
@@ -326,8 +326,9 @@ export function startSaleScheduler(client: Client, channelId: string): void {
         await loadData().catch((e) => console.error("[Sale] データ取得エラー:", e));
       }
 
-      const channel = client.channels.cache.get(channelId) as TextChannel | undefined;
-      if (!channel) return;
+      const ch = client.channels.cache.get(channelId);
+      if (!ch || ch.type !== 0) return;
+      const channel = ch as TextChannel;
 
       if (jst.getUTCHours() === 22 && jst.getUTCMinutes() === 0) {
         const tomorrow = new Date(jst.getTime());
@@ -364,19 +365,19 @@ export function startSaleScheduler(client: Client, channelId: string): void {
 }
 
 // ================================
-// 🆕 手動テストコマンド（o.sukesanping）
+// 手動テストコマンド（o.sukesanping）
 // ================================
 export function registerPingCommand(client: Client) {
   client.on("messageCreate", async (msg) => {
     if (msg.author.bot) return;
     if (msg.content !== "o.sukesanping") return;
 
-    const channel = client.channels.cache.get("1446169322392387727");
-    if (!channel || !channel.isTextBased()) return;
+    const ch = client.channels.cache.get("1446169322392387727");
+    if (!ch || ch.type !== 0) return;
+    const channel = ch as TextChannel;
 
     const jst = nowJST();
 
-    // ① 翌日スケジュール
     const tomorrow = new Date(jst.getTime());
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     tomorrow.setUTCHours(0, 0, 0, 0);
@@ -384,7 +385,6 @@ export function registerPingCommand(client: Client) {
     const dailyText = buildDailyText(tomorrow);
     await channel.send("【手動テスト】翌日スケジュール\n```\n" + dailyText + "\n```");
 
-    // ② 0:00 開始イベントを強制チェック
     const startingAtMidnight = findStartingAt(jst, 0);
 
     if (startingAtMidnight.length === 0) {
