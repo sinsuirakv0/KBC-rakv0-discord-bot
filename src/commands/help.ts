@@ -7,7 +7,6 @@ const help: Command = {
   usage: "o.help",
 
   async execute(message: Message): Promise<void> {
-    // index.ts で登録したコレクションを参照
     const commands = (
       message.client as typeof message.client & {
         commands?: Collection<string, Command>;
@@ -21,15 +20,20 @@ const help: Command = {
 
     if (commands) {
       for (const [, cmd] of commands) {
+        // field.name は 256 文字以内の制約があるため、コマンド名のみを使う。
+        // usage（複数行になる場合がある）と description は value 側に入れる。
+        const usageText = cmd.usage ?? `o.${cmd.name}`;
+        const value = `\`\`\`\n${usageText}\n\`\`\`${cmd.description}`;
+
         embed.addFields({
-          name: `\`${cmd.usage ?? `k.${cmd.name}`}\``,
-          value: cmd.description,
+          name: `o.${cmd.name}`,
+          value,
           inline: false,
         });
       }
     }
 
-    embed.setFooter({ text: `${message.guild?.name ?? ""}` });
+    embed.setFooter({ text: message.guild?.name ?? "" });
 
     await message.reply({ embeds: [embed] });
   },
