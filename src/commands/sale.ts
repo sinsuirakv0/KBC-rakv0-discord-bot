@@ -1,5 +1,6 @@
 import { Message, TextChannel } from "discord.js";
 import { Command } from "../types/Command";
+import { isHidden } from "../config/saleHiddenConfig";
 
 // ================================
 // URLs
@@ -89,7 +90,6 @@ function parseHeaderDate(dateStr: string, timeStr: string): Date {
 }
 
 function formatJSTFull(date: Date): string {
-  // 2026年3月31日(火) 11:00
   const jst = new Date(date.getTime() + JST_MS);
   const y = jst.getUTCFullYear();
   const m = jst.getUTCMonth() + 1;
@@ -101,7 +101,6 @@ function formatJSTFull(date: Date): string {
 }
 
 function formatDateShort(date: Date): string {
-  // 03/31(火) 11:00
   const jst = new Date(date.getTime() + JST_MS);
   const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
   const d = String(jst.getUTCDate()).padStart(2, "0");
@@ -140,7 +139,6 @@ function fmtMin(m: number): string {
 }
 
 function parseDRPoint(s: string): string {
-  // "MMDD HHMM" → "M/D HH:MM"
   const parts = s.trim().split(" ");
   const mmdd = parts[0].padStart(4, "0");
   const month = parseInt(mmdd.slice(0, 2));
@@ -150,7 +148,6 @@ function parseDRPoint(s: string): string {
 }
 
 function formatTimeBlock(block: TimeBlock): string {
-  // 日条件部分
   let dayPart: string;
   if (block.weekdays.length > 0) {
     const days = block.weekdays.map(w => WEEKDAY_JA_MAP[w] ?? w).join("・");
@@ -165,7 +162,6 @@ function formatTimeBlock(block: TimeBlock): string {
     dayPart = "毎日";
   }
 
-  // 時間帯部分
   let timePart: string;
   if (block.timeRanges.length === 0) {
     timePart = "終日";
@@ -189,18 +185,16 @@ function formatEntryDetail(entry: SaleEntry, nameMap: Map<number, string>): stri
 
   const lines: string[] = [];
 
-  // ID + 名前
-  const validIds = stageIds.filter(id => id >= 0);
+  // ID + 名前（非表示除外）
+  const validIds = stageIds.filter(id => id >= 0 && !isHidden(id));
   for (const id of validIds) {
     const name = nameMap.get(id) ?? "不明";
     lines.push(`${id} ${name}`);
   }
 
-  // 開催期間 + バージョン
   const endStr = perm ? "常設" : formatJSTFull(end!);
   lines.push(`${formatJSTFull(start)} ~ ${endStr}  ver.${header.minVersion}~${header.maxVersion}`);
 
-  // タイムブロック
   if (timeBlocks.length === 0) {
     lines.push("・常時開催（時間制限なし）");
   } else {
@@ -213,7 +207,7 @@ function formatEntryDetail(entry: SaleEntry, nameMap: Map<number, string>): stri
 }
 
 // ================================
-// チャンク送信ヘルパー
+// チャンク送信ヘルパー（Discord 2000文字上限対応）
 // ================================
 async function sendChunked(
   channel: TextChannel,
@@ -260,15 +254,13 @@ async function handleSearch(query: string, channel: TextChannel): Promise<void> 
   const num = parseInt(query);
   const isNumericQuery = !isNaN(num) && String(num) === query.trim();
 
-  const matchedIds: number[] = [];
+  let matchedIds: number[] = [];
 
   if (isNumericQuery) {
-    // IDが nameMap か JSON に存在すれば採用
     if (nameMap.has(num) || json.data.some(e => e.stageIds.includes(num))) {
       matchedIds.push(num);
     }
   } else {
-    // 名前部分一致検索
     const q = query.toLowerCase();
     for (const [id, name] of nameMap) {
       if (name.toLowerCase().includes(q)) {
@@ -277,18 +269,20 @@ async function handleSearch(query: string, channel: TextChannel): Promise<void> 
     }
   }
 
+  // 非表示IDを除外
+  matchedIds = matchedIds.filter(id => !isHidden(id));
+
   if (matchedIds.length === 0) {
     await processingMsg.edit(`❌ \`${query}\` に一致するイベントは見つかりませんでした`);
     return;
   }
 
-  // 各IDのステータス判定
   const lines: string[] = [];
   for (const id of matchedIds) {
     const name = nameMap.get(id) ?? "不明";
     const entries = json.data.filter(e => e.stageIds.includes(id));
 
-    let statusEmoji = "  ";
+    let statusEmoji: string;
     if (entries.length === 0) {
       statusEmoji = "❓";
     } else {
@@ -330,17 +324,14 @@ async function handleSchedule(
   }
 
   const now = new Date();
-
-  // 常設除外
   const nonPerm = json.data.filter(e => !isPermanent(e));
 
-  // フィルター適用
   const filtered = nonPerm.filter(e => {
     const end = parseHeaderDate(e.header.endDate, e.header.endTime);
-    if (end <= now) return false; // 既に終了は除外
+    if (end <= now) return false;
     if (filter === "c") return isActive(e, now);
     if (filter === "f") return isFuture(e, now);
-    return true; // all: active or future
+    return true;
   });
 
   if (filtered.length === 0) {
@@ -349,47 +340,46 @@ async function handleSchedule(
     return;
   }
 
-  // 開始日でソート
   filtered.sort(
     (a, b) =>
       parseHeaderDate(a.header.startDate, a.header.startTime).getTime() -
       parseHeaderDate(b.header.startDate, b.header.startTime).getTime()
   );
 
-  // 1行: 🟢/🔵 開催期間  ID 名前
-  // 1エントリに複数IDがある場合は複数行に展開
   const lines: string[] = [];
   for (const entry of filtered) {
+    // 非表示除外した有効ID
+    const validIds = entry.stageIds.filter(id => id >= 0 && !isHidden(id));
+    if (validIds.length === 0) continue;
+
     const start = parseHeaderDate(entry.header.startDate, entry.header.startTime);
     const end = parseHeaderDate(entry.header.endDate, entry.header.endTime);
-    const active = isActive(entry, now);
-    const emoji = active ? "🟢" : "🔵";
+    const emoji = isActive(entry, now) ? "🟢" : "🔵";
     const period = `${formatDateShort(start)} ~ ${formatDateShort(end)}`;
 
-    const validIds = entry.stageIds.filter(id => id >= 0);
-    if (validIds.length === 1) {
-      const id = validIds[0];
+    // 日時は必ず1行目、IDと名前は必ず別行（改行）
+    lines.push(`${emoji} ${period}`);
+    for (const id of validIds) {
       const name = nameMap.get(id) ?? "不明";
-      lines.push(`${emoji} ${period}  ${id} ${name}`);
-    } else {
-      // 複数IDはインデントして表示
-      lines.push(`${emoji} ${period}`);
-      for (const id of validIds) {
-        const name = nameMap.get(id) ?? "不明";
-        lines.push(`     ${id} ${name}`);
-      }
+      lines.push(`    ${id} ${name}`);
     }
+    lines.push(""); // エントリ間の区切り
+  }
+
+  if (lines.length === 0) {
+    const label = filter === "c" ? "開催中" : filter === "f" ? "予定" : "開催中・予定";
+    await processingMsg.edit(`${label}のセールイベントはありません（非表示設定により表示対象なし）`);
+    return;
   }
 
   await processingMsg.delete().catch(() => void 0);
 
-  const filterLabel =
-    filter === "c" ? "開催中" : filter === "f" ? "予定" : "開催中＆予定";
+  const filterLabel = filter === "c" ? "開催中" : filter === "f" ? "予定" : "開催中＆予定";
   await sendChunked(channel, `セールスケジュール [${filterLabel}]\n\n` + lines.join("\n"));
 }
 
 // ================================
-// ハンドラー: ID詳細（フォーマット済み）
+// ハンドラー: ID詳細
 // ================================
 async function handleDetail(id: number, channel: TextChannel): Promise<void> {
   const processingMsg = await channel.send("⏳ 詳細取得中...");
@@ -412,8 +402,7 @@ async function handleDetail(id: number, channel: TextChannel): Promise<void> {
   await processingMsg.delete().catch(() => void 0);
 
   for (const entry of entries) {
-    const text = formatEntryDetail(entry, nameMap);
-    await sendChunked(channel, text);
+    await sendChunked(channel, formatEntryDetail(entry, nameMap));
   }
 }
 
@@ -440,10 +429,8 @@ async function handleJson(id: number, channel: TextChannel): Promise<void> {
   await processingMsg.delete().catch(() => void 0);
 
   for (const entry of entries) {
-    // raw フィールドを除いて表示
     const { raw: _raw, ...entryData } = entry;
-    const formatted = JSON.stringify(entryData, null, 2);
-    await sendChunked(channel, formatted, "json");
+    await sendChunked(channel, JSON.stringify(entryData, null, 2), "json");
   }
 }
 
@@ -471,9 +458,7 @@ async function handleRaw(id: number, channel: TextChannel): Promise<void> {
 
   for (const entry of entries) {
     if (!entry.raw) {
-      await channel.send(
-        `❌ (startDate: \`${entry.header.startDate}\`) に raw データがありません`
-      );
+      await channel.send(`❌ (startDate: \`${entry.header.startDate}\`) に raw データがありません`);
       continue;
     }
     await sendChunked(channel, entry.raw.replace(/\t/g, "    "));
@@ -512,11 +497,9 @@ const sale: Command = {
       return;
     }
 
-    // スケジュール系
     if (args[0] === "s") {
       const rest = args.slice(1);
 
-      // o.sale s (引数なし)
       if (rest.length === 0) {
         await handleSchedule("all", channel);
         return;
@@ -524,13 +507,11 @@ const sale: Command = {
 
       const first = rest[0].toLowerCase();
 
-      // o.sale s c / o.sale s f
       if (first === "c" || first === "f") {
         await handleSchedule(first, channel);
         return;
       }
 
-      // o.sale s <ID> [r|j]
       const idNum = parseInt(first);
       if (!isNaN(idNum) && String(idNum) === first) {
         const mod = rest[1]?.toLowerCase();
@@ -544,12 +525,10 @@ const sale: Command = {
         return;
       }
 
-      // 不明引数 → schedule all にフォールバック
       await handleSchedule("all", channel);
       return;
     }
 
-    // 名前 / ID 検索
     await handleSearch(args.join(" "), channel);
   },
 };
