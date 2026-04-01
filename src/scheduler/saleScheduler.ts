@@ -1,4 +1,5 @@
 import { Client, TextChannel } from "discord.js";
+import { isHidden } from "../config/saleHiddenConfig";
 
 // ================================
 // URLs
@@ -64,7 +65,6 @@ async function loadData(): Promise<void> {
     fetch(SALE_JSON_URL),
     fetch(SALE_NAME_CSV_URL),
   ]);
-
   saleJson = (await jsonRes.json()) as SaleJson;
 
   const csvText = await csvRes.text();
@@ -80,7 +80,7 @@ async function loadData(): Promise<void> {
 }
 
 // ================================
-// 時刻ユーティリティ（JST擬似Date）
+// 時刻ユーティリティ
 // ================================
 
 /** JST の現在時刻を返す（getUTC* でJST値を得る擬似Dateオブジェクト） */
@@ -88,13 +88,12 @@ function nowJST(): Date {
   return new Date(Date.now() + JST_MS);
 }
 
-/** "700" → 420, "1300" → 780, "2400" → 1440 (分単位) */
+/** "700" → 420, "2400" → 1440 (分単位) */
 function parseTimeMin(s: string): number {
   const p = s.padStart(4, "0");
   return parseInt(p.slice(0, 2)) * 60 + parseInt(p.slice(2, 4));
 }
 
-/** ヘッダーの日付文字列をDateに変換（JST基準） */
 function parseHeaderDate(dateStr: string, timeStr: string): Date {
   const d = dateStr.padStart(8, "0");
   const t = timeStr.padStart(4, "0");
@@ -103,18 +102,15 @@ function parseHeaderDate(dateStr: string, timeStr: string): Date {
   );
 }
 
-/** ヘッダーの有効期間内か（realNow はリアルUTC） */
 function isHeaderActive(header: SaleHeader, realNow: Date): boolean {
   const start = parseHeaderDate(header.startDate, header.startTime);
   const end = parseHeaderDate(header.endDate, header.endTime);
   return realNow >= start && realNow < end;
 }
 
-/**
- * 日別スケジュール表示用：その日（JST正午）でヘッダーが有効か
- * targetJst: getUTC* がJST値を返す擬似Date（時刻は 00:00 を想定）
- */
 function isHeaderActiveOnDay(header: SaleHeader, targetJst: Date): boolean {
+  // targetJst: getUTC* がJST値を返す擬似Date (時刻は 00:00 を想定)
+  // その日の正午(JST)でヘッダーが有効かチェック
   const noonReal = new Date(targetJst.getTime() + 12 * 60 * 60 * 1000 - JST_MS);
   return (
     noonReal >= parseHeaderDate(header.startDate, header.startTime) &&
@@ -125,11 +121,6 @@ function isHeaderActiveOnDay(header: SaleHeader, targetJst: Date): boolean {
 // ================================
 // dateRange パース
 // ================================
-
-/**
- * "MMDD HHMM" 形式を比較用数値に変換
- * 例: "116 1100" → 1*100000 + 16*1440 + 660
- */
 function parseDRPValue(s: string): number {
   const parts = s.trim().split(" ");
   const mmdd = parts[0].padStart(4, "0");
@@ -153,8 +144,6 @@ function matchesDateRange(range: DateRange, jst: Date): boolean {
 // ================================
 // timeBlock 条件判定
 // ================================
-
-/** timeBlock の「日」条件がこのJST日時に合致するか */
 function matchesDayCondition(block: TimeBlock, jst: Date): boolean {
   const { weekdays, monthDays, dateRanges } = block;
   if (weekdays.length === 0 && monthDays.length === 0 && dateRanges.length === 0) return true;
@@ -165,11 +154,11 @@ function matchesDayCondition(block: TimeBlock, jst: Date): boolean {
 }
 
 // ================================
-// 名前取得
+// 名前取得（非表示除外済み）
 // ================================
-function getNames(ids: number[]): string[] {
+function getVisibleNames(ids: number[]): string[] {
   return ids
-    .filter((id) => id >= 0)
+    .filter((id) => id >= 0 && !isHidden(id))
     .map((id) => nameMap.get(id) ?? null)
     .filter((n): n is string => n !== null);
 }
@@ -179,9 +168,7 @@ function getNames(ids: number[]): string[] {
 // ================================
 function formatMin(m: number): string {
   if (m >= 1440) return "24:00";
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
 function formatDuration(startM: number, endM: number): string {
@@ -193,7 +180,37 @@ function formatDuration(startM: number, endM: number): string {
 }
 
 // ================================
-// 指定時刻に開始するイベントを検索
+// チャンク送信ヘルパー（Discord 2000文字上限対応）
+// ================================
+async function sendChunked(
+  channel: TextChannel,
+  text: string,
+  prefix = ""
+): Promise<void> {
+  const rawLines = text.split("\n");
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const line of rawLines) {
+    const addition = current ? "\n" + line : line;
+    if ((current + addition).length > 1800) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = current ? current + "\n" + line : line;
+    }
+  }
+  if (current) chunks.push(current);
+
+  for (let i = 0; i < chunks.length; i++) {
+    // prefixは最初のチャンクのみ付与
+    const hdr = i === 0 ? prefix : "";
+    await channel.send(`${hdr}\`\`\`\n${chunks[i]}\n\`\`\``).catch(console.error);
+  }
+}
+
+// ================================
+// 指定JST日時に開始するイベントを検索
 // ================================
 interface StartingItem {
   id: number;
@@ -217,9 +234,9 @@ function findStartingAt(jst: Date): StartingItem[] {
       if (!matchesDayCondition(block, jst)) continue;
 
       if (block.timeRanges.length === 0) {
-        // 時間帯なし = 該当曜日/日付の終日開催 → 00:00 に通知
+        // 時間帯なし → 00:00 に通知
         if (currMin === 0) {
-          for (const id of entry.stageIds.filter((id) => id >= 0)) {
+          for (const id of entry.stageIds.filter((id) => id >= 0 && !isHidden(id))) {
             const name = nameMap.get(id);
             if (name) results.push({ id, name, startMin: 0, endMin: 1440 });
           }
@@ -229,7 +246,7 @@ function findStartingAt(jst: Date): StartingItem[] {
           const sMin = parseTimeMin(sStr);
           const eMin = parseTimeMin(eStr);
           if (sMin === currMin) {
-            for (const id of entry.stageIds.filter((id) => id >= 0)) {
+            for (const id of entry.stageIds.filter((id) => id >= 0 && !isHidden(id))) {
               const name = nameMap.get(id);
               if (name) results.push({ id, name, startMin: sMin, endMin: eMin });
             }
@@ -250,7 +267,7 @@ function findStartingAt(jst: Date): StartingItem[] {
 }
 
 // ================================
-// 翌日スケジュール生成
+// 指定JST日のスケジュール生成
 // ================================
 interface ScheduleSlot {
   startMin: number;
@@ -267,7 +284,7 @@ function buildDaySchedule(targetJst: Date): ScheduleSlot[] {
     if (!isHeaderActiveOnDay(entry.header, targetJst)) continue;
     if (entry.timeBlocks.length === 0) continue;
 
-    const names = getNames(entry.stageIds);
+    const names = getVisibleNames(entry.stageIds);
     if (names.length === 0) continue;
 
     for (const block of entry.timeBlocks) {
@@ -326,7 +343,6 @@ function buildDailyText(targetJst: Date): string {
 // ================================
 // スケジューラ本体
 // ================================
-
 export function startSaleScheduler(client: Client, channelId: string): void {
   let lastCheckedMinute = -1;
 
@@ -347,108 +363,175 @@ export function startSaleScheduler(client: Client, channelId: string): void {
       const channel = client.channels.cache.get(channelId) as TextChannel | undefined;
       if (!channel) return;
 
-      // 22:00 JST: 翌日のスケジュールを投稿
+      // 22:00 JST: 翌日スケジュール投稿
       if (jst.getUTCHours() === 22 && jst.getUTCMinutes() === 0) {
-        const tomorrow = new Date(jst.getTime());
-        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-        tomorrow.setUTCHours(0, 0, 0, 0);
-        const text = buildDailyText(tomorrow);
-        await channel.send("```\n" + text + "\n```").catch(console.error);
+        try {
+          const tomorrow = new Date(jst.getTime());
+          tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+          tomorrow.setUTCHours(0, 0, 0, 0);
+          const text = buildDailyText(tomorrow);
+          await sendChunked(channel, text);
+        } catch (e) {
+          console.error("[Sale] 翌日スケジュール送信エラー:", e);
+        }
       }
 
       // リアルタイム通知
       const starting = findStartingAt(jst);
       if (starting.length === 0) return;
 
-      const lines = starting.map(
-        (item) => `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
-      );
+      try {
+        const lines = starting.map(
+          (item) => `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
+        );
 
-      if (lines.length === 1) {
-        await channel.send(`🔔 ${lines[0]}`).catch(console.error);
-      } else {
-        await channel
-          .send("🔔 イベント開始\n```\n" + lines.join("\n") + "\n```")
-          .catch(console.error);
+        if (lines.length === 1) {
+          await channel.send(`🔔 ${lines[0]}`).catch(console.error);
+        } else {
+          await sendChunked(channel, lines.join("\n"), "🔔 イベント開始\n");
+        }
+      } catch (e) {
+        console.error("[Sale] リアルタイム通知エラー:", e);
       }
     } catch (e) {
       console.error("[Sale] スケジューラエラー:", e);
     }
   };
 
-  // 起動時にデータ読み込み
   loadData().catch((e) => console.error("[Sale] 初期データ取得エラー:", e));
-
-  // 30秒ごとにチェック（1分あたり最大2回だが、lastCheckedMinuteで重複防止）
   setInterval(tick, 30_000);
   tick();
 }
 
 // ================================
-// デバッグ用エクスポート（sukesanping コマンドから呼ばれる）
+// "M/D" 形式をパース（例: "4/1" → {month:4, day:1}）
 // ================================
+function parseMMDD(str: string): { month: number; day: number } | null {
+  const parts = str.split("/");
+  if (parts.length !== 2) return null;
+  const month = parseInt(parts[0]);
+  const day = parseInt(parts[1]);
+  if (
+    isNaN(month) || isNaN(day) ||
+    month < 1 || month > 12 ||
+    day < 1 || day > 31
+  ) return null;
+  return { month, day };
+}
 
 /**
- * o.sukesanping d     → 翌日スケジュールをチャンネルに返す
- * o.sukesanping 2100  → その時刻に通知されるイベント一覧を返す
+ * M/D + HH:MM を指定して擬似JST Dateを生成する
+ * （getUTC* でJST値を得る擬似Dateオブジェクト）
  */
+function makePseudoJST(month: number, day: number, hour: number, min: number): Date {
+  const jst = nowJST();
+  const year = jst.getUTCFullYear();
+  // Date.UTC を使ってその年の M/D HH:MM を擬似JST値として生成
+  return new Date(Date.UTC(year, month - 1, day, hour, min, 0));
+}
+
+// ================================
+// デバッグ用エクスポート（sukesanping コマンドから呼ばれる）
+//
+// @param channel  送信先チャンネル
+// @param arg      "d" | "HHMM" | undefined
+// @param dateStr  "M/D" 形式の日付指定（省略可、例: "4/1"）
+// ================================
 export async function runPingTest(
   channel: TextChannel,
-  arg: string | undefined
+  arg: string | undefined,
+  dateStr?: string
 ): Promise<void> {
-  // データがまだ読み込まれていなければ先に取得
-  if (!saleJson) {
-    try {
-      await loadData();
-    } catch {
-      await channel.send("❌ データ取得に失敗しました");
+  // 全体をtry-catchで囲みコマンドエラーにしない
+  try {
+    // データ未ロードなら先に取得
+    if (!saleJson) {
+      try {
+        await loadData();
+      } catch (e) {
+        await channel.send("❌ データ取得に失敗しました").catch(() => void 0);
+        return;
+      }
+    }
+
+    // 日付指定をパース
+    const parsedDate = dateStr ? parseMMDD(dateStr) : null;
+
+    // ──────────────────────────────
+    // "d" または引数なし → スケジュール表示
+    // ──────────────────────────────
+    if (!arg || arg.toLowerCase() === "d") {
+      let targetJst: Date;
+
+      if (parsedDate) {
+        // 指定日の 00:00 JST（擬似）
+        targetJst = makePseudoJST(parsedDate.month, parsedDate.day, 0, 0);
+      } else {
+        // 翌日の 00:00 JST（擬似）
+        const jst = nowJST();
+        targetJst = new Date(jst.getTime());
+        targetJst.setUTCDate(targetJst.getUTCDate() + 1);
+        targetJst.setUTCHours(0, 0, 0, 0);
+      }
+
+      const m = targetJst.getUTCMonth() + 1;
+      const d = targetJst.getUTCDate();
+      const text = buildDailyText(targetJst);
+      await sendChunked(channel, text, `[TEST] ${m}/${d} のスケジュール\n`);
       return;
     }
-  }
 
-  // 引数なし or "d" → 翌日スケジュール
-  if (!arg || arg.toLowerCase() === "d") {
-    const jst = nowJST();
-    const tomorrow = new Date(jst.getTime());
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-    tomorrow.setUTCHours(0, 0, 0, 0);
-    const text = buildDailyText(tomorrow);
-    await channel.send("[TEST] 翌日スケジュール\n```\n" + text + "\n```");
-    return;
-  }
+    // ──────────────────────────────
+    // HHMM → 指定時刻のイベント通知プレビュー
+    // ──────────────────────────────
+    const raw = arg.trim().padStart(4, "0");
+    const h = parseInt(raw.slice(0, 2));
+    const m = parseInt(raw.slice(2, 4));
 
-  // HHMM → 指定時刻のイベント通知プレビュー
-  const raw = arg.trim().padStart(4, "0");
-  const h = parseInt(raw.slice(0, 2));
-  const m = parseInt(raw.slice(2, 4));
+    // 0000～2359 の範囲チェック（h=24は00:00扱いで通さない）
+    if (isNaN(h) || isNaN(m) || h < 0 || h >= 24 || m < 0 || m > 59) {
+      await channel.send("❌ 時刻は `0000`〜`2359` の形式で指定してください（例: `2100`）");
+      return;
+    }
 
-  if (isNaN(h) || isNaN(m) || h < 0 || h > 24 || m < 0 || m > 59) {
-    await channel.send("❌ 時刻は HHMM 形式で指定してください（例: `2100`）");
-    return;
-  }
+    let fakeJst: Date;
+    if (parsedDate) {
+      // 指定日の HH:MM JST（擬似）
+      fakeJst = makePseudoJST(parsedDate.month, parsedDate.day, h, m);
+    } else {
+      // 今日の HH:MM JST（擬似）
+      const jst = nowJST();
+      fakeJst = new Date(jst.getTime());
+      fakeJst.setUTCHours(h, m, 0, 0);
+    }
 
-  // 今日のJST日付ベースで指定時刻の擬似Dateを作る
-  const jst = nowJST();
-  const fakeJst = new Date(jst.getTime());
-  fakeJst.setUTCHours(h, m, 0, 0);
+    const items = findStartingAt(fakeJst);
+    const dateLabel = `${fakeJst.getUTCMonth() + 1}/${fakeJst.getUTCDate()}`;
+    const timeLabel = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 
-  const items = findStartingAt(fakeJst);
-  const timeLabel = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    if (items.length === 0) {
+      await channel.send(`[TEST] ${dateLabel} ${timeLabel} に開始するイベントはありません`);
+      return;
+    }
 
-  if (items.length === 0) {
-    await channel.send(`[TEST] ${timeLabel} に開始するイベントはありません`);
-    return;
-  }
-
-  const lines = items.map(
-    (item) => `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
-  );
-
-  if (lines.length === 1) {
-    await channel.send(`[TEST] 🔔 ${timeLabel}\n${lines[0]}`);
-  } else {
-    await channel.send(
-      `[TEST] 🔔 ${timeLabel} イベント開始\n\`\`\`\n${lines.join("\n")}\n\`\`\``
+    const lines = items.map(
+      (item) => `${item.id} ${item.name} (${formatDuration(item.startMin, item.endMin)})`
     );
+
+    if (lines.length === 1) {
+      await channel.send(`[TEST] 🔔 ${dateLabel} ${timeLabel}\n${lines[0]}`);
+    } else {
+      await sendChunked(
+        channel,
+        lines.join("\n"),
+        `[TEST] 🔔 ${dateLabel} ${timeLabel} イベント開始\n`
+      );
+    }
+  } catch (e) {
+    // 予期しないエラーをコマンドエラーに伝播させず、チャンネルにエラーを返す
+    console.error("[runPingTest] エラー:", e);
+    await channel
+      .send(`❌ 内部エラーが発生しました: ${e instanceof Error ? e.message : String(e)}`)
+      .catch(() => void 0);
   }
 }
