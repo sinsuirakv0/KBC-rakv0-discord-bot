@@ -1,11 +1,10 @@
 import { Client, GatewayIntentBits, Message } from "discord.js";
 import dotenv from "dotenv";
-import { loadCommands } from "./commands/commandLoader";
+import { handleCommand } from "./commands";
 
 dotenv.config();
 
 const PREFIX = "o.";
-const commands = loadCommands();
 
 const client = new Client({
   intents: [
@@ -24,10 +23,7 @@ client.on("messageCreate", (message: Message) => {
   if (!message.content.startsWith(PREFIX)) return;
 
   const name = message.content.slice(PREFIX.length).trim().toLowerCase();
-
-  if (name in commands) {
-    message.reply(commands[name]);
-  }
+  handleCommand(message, name);
 });
 
 client.login(process.env.DISCORD_TOKEN);
