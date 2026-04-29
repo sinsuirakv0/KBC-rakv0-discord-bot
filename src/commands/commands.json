@@ -1,3 +1,4 @@
 {
-  "ping": "pong!"
+  "ping": "pong!",
+  "home": "**ホーム**\n<https://kbc-rakv0.vercel.app/index.html>\n**隠しホーム**\n<https://kbc-rakv0.vercel.app/secret/index.html>"
 }
