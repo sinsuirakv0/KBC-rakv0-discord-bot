@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Message } from "discord.js";
+Import { Client, GatewayIntentBits, Message } from "discord.js";
 import dotenv from "dotenv";
 import { handleCommand } from "./commands";
 
@@ -22,8 +22,11 @@ client.on("messageCreate", (message: Message) => {
   if (message.author.bot) return;
   if (!message.content.startsWith(PREFIX)) return;
 
+//↓ここにいれればたぶんいい！
+If (!message.channel?.isTextBased()) return;
+
   const name = message.content.slice(PREFIX.length).trim().toLowerCase();
   handleCommand(message, name);
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN
