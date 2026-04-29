@@ -21,9 +21,8 @@ client.once("ready", () => {
 client.on("messageCreate", (message: Message) => {
   if (message.author.bot) return;
   if (!message.content.startsWith(PREFIX)) return;
-
-//↓ここにいれればたぶんいい！
-If (!message.channel?.isTextBased()) return;
+  
+if (!message.channel?.isTextBased()) return;
 
   const name = message.content.slice(PREFIX.length).trim().toLowerCase();
   handleCommand(message, name);
