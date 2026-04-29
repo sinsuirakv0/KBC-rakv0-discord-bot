@@ -1,98 +1,33 @@
-import "dotenv/config";
-import {
-  Client,
-  Collection,
-  GatewayIntentBits,
-  Message,
-} from "discord.js";
-import fs from "fs";
-import path from "path";
-import { Command } from "./types/Command";
-import { startWebhookServer } from "./utils/webhookServer";
-import { startSaleScheduler } from "./scheduler/saleScheduler";
+import { Client, GatewayIntentBits, Message } from "discord.js";
+import dotenv from "dotenv";
+import { loadCommands } from "./commands/commandLoader";
+
+dotenv.config();
 
 const PREFIX = "o.";
+const commands = loadCommands();
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions,
   ],
 });
-// ================================
-// コマンド読み込み
-// ================================
-const commands = new Collection<string, Command>();
-(client as typeof client & { commands: Collection<string, Command> }).commands = commands;
 
-const commandsPath = path.join(__dirname, "commands");
-const commandFiles = fs
-  .readdirSync(commandsPath)
-  .filter((f) => f.endsWith(".js"));
-
-for (const file of commandFiles) {
-  const command: Command = require(path.join(commandsPath, file));
-  commands.set(command.name, command);
-}
-
-// ================================
-// 起動時
-// ================================
 client.once("ready", () => {
-  console.log("Logged in as " + client.user?.tag);
-  console.log("Prefix: " + PREFIX);
-
-  client.user?.setActivity(PREFIX + "help でコマンド一覧", { type: 0 });
-
-  // Webhook サーバー
-  startWebhookServer(client);
-
-  // スケジューラ
-  startSaleScheduler(client, "1446169322392387727");
-
-  // ★ registerPingCommand は削除 ★
+  console.log(`Bot起動: ${client.user?.tag}`);
 });
 
-// ================================
-// メッセージコマンド
-// ================================
-client.on("messageCreate", async (message: Message) => {
+client.on("messageCreate", (message: Message) => {
   if (message.author.bot) return;
-  if (!message.guild) return;
   if (!message.content.startsWith(PREFIX)) return;
 
-  const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
-  const commandName = args.shift()?.toLowerCase();
+  const name = message.content.slice(PREFIX.length).trim().toLowerCase();
 
-  if (!commandName) return;
-
-  const command = commands.get(commandName);
-
-  if (!command) {
-    await message.reply(
-      `❓ \`${PREFIX}${commandName}\` は存在しないコマンドです。\`${PREFIX}help\` でコマンド一覧を確認してください。`
-    );
-    return;
-  }
-
-  try {
-    await command.execute(message, args);
-  } catch (err) {
-    console.error("[ERROR] " + PREFIX + commandName + ":", err);
-    await message.reply("⚠️ コマンドの実行中にエラーが発生しました。");
+  if (name in commands) {
+    message.reply(commands[name]);
   }
 });
 
-// ================================
-// エラー処理
-// ================================
-process.on("unhandledRejection", (err) => {
-  console.error("[unhandledRejection]", err);
-});
-
-// ================================
-// ログイン
-// ================================
 client.login(process.env.DISCORD_TOKEN);
