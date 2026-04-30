@@ -11,6 +11,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions,
   ],
 });
 
@@ -21,11 +22,11 @@ client.once("ready", () => {
 client.on("messageCreate", (message: Message) => {
   if (message.author.bot) return;
   if (!message.content.startsWith(PREFIX)) return;
-  
-if (!message.channel?.isTextBased()) return;
+  if (!message.inGuild()) return;
 
-  const name = message.content.slice(PREFIX.length).trim().toLowerCase();
-  handleCommand(message, name);
+  const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+  const name = args[0].toLowerCase();
+  handleCommand(message, name, args.slice(1));
 });
 
 client.login(process.env.DISCORD_TOKEN);
