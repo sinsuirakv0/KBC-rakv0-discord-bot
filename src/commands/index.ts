@@ -19,4 +19,8 @@ export function handleCommand(message: Message, name: string, args: string[]): v
   if (response && "send" in message.channel) {
     message.channel.send(response);
   }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> ef4c25d6b13fe084926222a7654c520275e88afa
