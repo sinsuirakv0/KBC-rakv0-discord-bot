@@ -186,11 +186,7 @@ function formatEntryDetail(entry: SaleEntry, nameMap: Map<number, string>): stri
   const end = perm ? null : parseHeaderDate(header.endDate, header.endTime);
   const lines: string[] = [];
 
-<<<<<<< HEAD
-  for (const id of stageIds) {
-=======
-  for (const id of stageIds.filter(id => id >= 0)) {
->>>>>>> ef4c25d6b13fe084926222a7654c520275e88afa
+  for (const id of stageIds)) {
     lines.push(`${id} ${nameMap.get(id) ?? "不明"}`);
   }
 
@@ -266,11 +262,7 @@ async function handleSchedule(channel: TextChannel): Promise<void> {
 
   const lines: string[] = [];
   for (const entry of filtered) {
-<<<<<<< HEAD
     const validIds = entry.stageIds;
-=======
-    const validIds = entry.stageIds.filter(id => id >= 0);
->>>>>>> ef4c25d6b13fe084926222a7654c520275e88afa
     if (validIds.length === 0) continue;
     const start = parseHeaderDate(entry.header.startDate, entry.header.startTime);
     const end = parseHeaderDate(entry.header.endDate, entry.header.endTime);
