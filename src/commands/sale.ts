@@ -186,7 +186,7 @@ function formatEntryDetail(entry: SaleEntry, nameMap: Map<number, string>): stri
   const end = perm ? null : parseHeaderDate(header.endDate, header.endTime);
   const lines: string[] = [];
 
-  for (const id of stageIds)) {
+  for (const id of stageIds) {
     lines.push(`${id} ${nameMap.get(id) ?? "不明"}`);
   }
 
@@ -452,8 +452,4 @@ const sale = {
   },
 };
 
-<<<<<<< HEAD
 module.exports = sale;
-=======
-module.exports = sale;
->>>>>>> ef4c25d6b13fe084926222a7654c520275e88afa
