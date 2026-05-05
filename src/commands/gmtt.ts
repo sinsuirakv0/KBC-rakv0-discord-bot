@@ -103,7 +103,14 @@ async function generateLogs(team: Team, hours: number, count: number): Promise<s
 
 async function handleList(userId: string, channel: TextChannel): Promise<void> {
   const spinner = await createSpinner(channel);
-  const data = await loadUserData(userId);
+  let data: UserData;
+  try {
+    data = await loadUserData(userId);
+  } catch {
+    spinner.stop();
+    await spinner.msg.edit("❌ データ取得に失敗しました");
+    return;
+  }
   spinner.stop();
   await spinner.msg.delete().catch(() => {});
   if (data.teams.length === 0) {
@@ -116,7 +123,14 @@ async function handleList(userId: string, channel: TextChannel): Promise<void> {
 
 async function handleDetail(userId: string, index: number, channel: TextChannel): Promise<void> {
   const spinner = await createSpinner(channel);
-  const data = await loadUserData(userId);
+  let data: UserData;
+  try {
+    data = await loadUserData(userId);
+  } catch {
+    spinner.stop();
+    await spinner.msg.edit("❌ データ取得に失敗しました");
+    return;
+  }
   spinner.stop();
   await spinner.msg.delete().catch(() => {});
   const team = data.teams[index];
@@ -130,29 +144,78 @@ async function handleDetail(userId: string, index: number, channel: TextChannel)
 }
 
 async function handleTeamSet(userId: string, input: string, channel: TextChannel): Promise<void> {
-  const names = input.split(",").map(s => s.trim()).filter(s => s.length > 0);
+  // カンマ区切りと空白区切りの両方に対応
+  const names = input.includes(",")
+    ? input.split(",").map(s => s.trim()).filter(s => s.length > 0)
+    : input.split(/\s+/).filter(s => s.length > 0);
   if (names.length < 1) { await channel.send("❌ 隊長の名前を入力してください"); return; }
   if (names.length > 11) { await channel.send("❌ 隊長1人＋隊員最大10人まで登録できます"); return; }
   const captain = names[0];
   const members = names.slice(1);
+  const newTeam: Team = { captain, members };
   const spinner = await createSpinner(channel);
-  const data = await loadUserData(userId);
-  data.teams.push({ captain, members });
+  let data: UserData;
+  try {
+    data = await loadUserData(userId);
+  } catch {
+    data = { teams: [] };
+  }
+  data.teams.push(newTeam);
   const saved = await saveUserData(userId, data);
   spinner.stop();
   await spinner.msg.delete().catch(() => {});
   if (!saved) { await channel.send("❌ 保存に失敗しました。GAS_URLが設定されているか確認してください"); return; }
-  const lines = [`✅ ${captain}探検隊を登録しました (No.${data.teams.length})`, `隊長: ${captain}`, ...members.map((m, i) => `隊員${i + 1}: ${m}`)];
+  const lines = [
+    `✅ ${captain}探検隊を登録しました (No.${data.teams.length})`,
+    `隊長: ${captain}`,
+    ...members.map((m, i) => `隊員${i + 1}: ${m}`),
+  ];
   await channel.send("```\n" + lines.join("\n") + "\n```");
+}
+
+async function handleTeamDelete(userId: string, index: number, channel: TextChannel): Promise<void> {
+  const spinner = await createSpinner(channel);
+  let data: UserData;
+  try {
+    data = await loadUserData(userId);
+  } catch {
+    spinner.stop();
+    await spinner.msg.edit("❌ データ取得に失敗しました");
+    return;
+  }
+  const team = data.teams[index];
+  if (!team) {
+    spinner.stop();
+    await spinner.msg.edit(`❌ 探検隊 ${index + 1} は登録されていません`);
+    return;
+  }
+  const name = team.captain;
+  data.teams.splice(index, 1);
+  const saved = await saveUserData(userId, data);
+  spinner.stop();
+  await spinner.msg.delete().catch(() => {});
+  if (!saved) { await channel.send("❌ 保存に失敗しました"); return; }
+  await channel.send(`✅ ${name}探検隊を削除しました`);
 }
 
 async function handleGenerate(userId: string, index: number, timeKey: string, channel: TextChannel): Promise<void> {
   const config = HOURS_CONFIG[timeKey];
   if (!config) { await channel.send("❌ 時間は `1h` / `3h` / `6h` で指定してください"); return; }
   const spinner = await createSpinner(channel);
-  const data = await loadUserData(userId);
+  let data: UserData;
+  try {
+    data = await loadUserData(userId);
+  } catch {
+    spinner.stop();
+    await spinner.msg.edit("❌ データ取得に失敗しました");
+    return;
+  }
   const team = data.teams[index];
-  if (!team) { spinner.stop(); await spinner.msg.edit(`❌ 探検隊 ${index + 1} は登録されていません`); return; }
+  if (!team) {
+    spinner.stop();
+    await spinner.msg.edit(`❌ 探検隊 ${index + 1} は登録されていません`);
+    return;
+  }
   let logText: string;
   try {
     logText = await generateLogs(team, config.hours, config.count);
@@ -171,13 +234,39 @@ const gmtt = {
   async execute(message: Message, args: string[]): Promise<void> {
     const channel = message.channel as TextChannel;
     const userId = message.author.id;
+
     if (args.length === 0) { await handleList(userId, channel); return; }
+
+    // o.gmtt del team <number>
+    if (args[0].toLowerCase() === "del" && args[1]?.toLowerCase() === "team") {
+      const teamNum = parseInt(args[2]);
+      if (!isNaN(teamNum) && String(teamNum) === args[2]) {
+        await handleTeamDelete(userId, teamNum - 1, channel);
+        return;
+      }
+    }
+
+    // o.gmtt team ...
     if (args[0].toLowerCase() === "team") {
+      const second = args[1];
+      const third = args[2]?.toLowerCase();
+      const teamNum = parseInt(second);
+      // o.gmtt team <number> del
+      if (!isNaN(teamNum) && String(teamNum) === second && third === "del") {
+        await handleTeamDelete(userId, teamNum - 1, channel);
+        return;
+      }
+      // o.gmtt team <names>
       const input = args.slice(1).join(" ");
-      if (!input) { await channel.send("❌ 使い方: `o.gmtt team 隊長,隊員1,隊員2,...`"); return; }
+      if (!input) {
+        await channel.send("❌ 使い方: `o.gmtt team 隊長,隊員1,隊員2,...` または `o.gmtt team <番号> del`");
+        return;
+      }
       await handleTeamSet(userId, input, channel);
       return;
     }
+
+    // o.gmtt <number> [time]
     const num = parseInt(args[0]);
     if (!isNaN(num) && String(num) === args[0]) {
       const index = num - 1;
@@ -185,8 +274,15 @@ const gmtt = {
       else await handleGenerate(userId, index, args[1].toLowerCase(), channel);
       return;
     }
+
     await channel.send(
-      "❌ 使い方:\n　`o.gmtt` — 探検隊一覧\n　`o.gmtt team 隊長,隊員1,...` — 探検隊登録\n　`o.gmtt <番号>` — 探検隊詳細\n　`o.gmtt <番号> 1h|3h|6h` — ログ生成"
+      "❌ 使い方:\n" +
+      "　`o.gmtt` — 探検隊一覧\n" +
+      "　`o.gmtt team 隊長,隊員1,...` — 探検隊登録\n" +
+      "　`o.gmtt team <番号> del` — 探検隊削除\n" +
+      "　`o.gmtt del team <番号>` — 探検隊削除\n" +
+      "　`o.gmtt <番号>` — 探検隊詳細\n" +
+      "　`o.gmtt <番号> 1h|3h|6h` — ログ生成"
     );
   },
 };
