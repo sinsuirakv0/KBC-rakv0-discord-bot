@@ -20,6 +20,11 @@ startMonitor(client);
 
 client.once("ready", () => {
   console.log(`Bot起動: ${client.user?.tag}`);
+
+  // 起動通知
+  client.channels.fetch("1446169322392387727")
+    .then(ch => { if (ch && "send" in ch) (ch as any).send("Bot起動しました！！"); })
+    .catch(() => {});
 });
 
 client.on("messageCreate", (message: Message) => {

@@ -15,7 +15,7 @@ const WORKFLOW_URL = `https://github.com/${OWNER}/${REPO}/actions/workflows/${WO
 const API_RUNS_URL = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs`;
 const API_DISPATCH_URL = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
 
-const THREAD_ID = "144619322392387727";
+const THREAD_ID = "1446169322392387727";
 const MENTION_USER_ID = "1447045405257760820";
 const CHECK_INTERVAL_MS = 60_000;
 const ALERT_THRESHOLD_MS = 10 * 60_000;
