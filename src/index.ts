@@ -23,7 +23,7 @@ client.once("ready", () => {
 
   // 起動通知
   client.channels.fetch("1446169322392387727")
-    .then(ch => { if (ch && "send" in ch) (ch as any).send("Bot起動しました！！"); })
+    .then(ch => { if (ch && "send" in ch) (ch as any).send("起動しました！！"); })
     .catch(() => {});
 });
 
