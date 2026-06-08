@@ -2,6 +2,7 @@ import { ButtonInteraction, Client, GatewayIntentBits, Message } from "discord.j
 import dotenv from "dotenv";
 import { handleCommand } from "./commands";
 import { startMonitor, handleStopButton } from "./monitor/checkEvents";
+import { startEventUpdateServer } from "./server/eventUpdateServer";
 
 dotenv.config();
 
@@ -17,13 +18,13 @@ const client = new Client({
 });
 
 startMonitor(client);
+startEventUpdateServer(client);
 
 client.once("ready", () => {
   console.log(`Bot起動: ${client.user?.tag}`);
 
-  // 起動通知
   client.channels.fetch("1446169322392387727")
-    .then(ch => { if (ch && "send" in ch) (ch as any).send("起動しました！！"); })
+    .then(ch => { if (ch && "send" in ch) (ch as any).send("起動しました。"); })
     .catch(() => {});
 });
 

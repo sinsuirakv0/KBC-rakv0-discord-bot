@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
@@ -7,6 +8,7 @@ import {
   Message,
   MessageCreateOptions,
 } from "discord.js";
+import { captureHistoryAllScreenshot } from "./screenshot";
 
 const OWNER = "sinsuirakv0";
 const REPO = "KBC-rakv0-event";
@@ -20,11 +22,13 @@ const MENTION_USER_ID = "1447045405257760820";
 const CHECK_INTERVAL_MS = 60_000;
 const ALERT_THRESHOLD_MS = 10 * 60_000;
 const ERROR_NOTIFY_WINDOW_MS = 15 * 60_000;
+const EVENT_TYPES = new Set(["gatya", "sale", "item"]);
 
 let fallbackActive = false;
 let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 let statusMessage: Message | null = null;
 const notifiedErrorRunIds = new Set<number>();
+const notifiedUpdateKeys = new Set<string>();
 
 interface WorkflowRun {
   id: number;
@@ -38,6 +42,14 @@ interface WorkflowRun {
 
 interface Sendable {
   send(options: string | MessageCreateOptions): Promise<Message>;
+}
+
+interface EventUpdatePayload {
+  types?: unknown;
+  detectedAt?: unknown;
+  historyUrl?: unknown;
+  runUrl?: unknown;
+  source?: unknown;
 }
 
 function ghHeaders(): Record<string, string> {
@@ -77,7 +89,7 @@ function makeStopRow(): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId("stop_monitor")
-      .setLabel("■ 実行停止")
+      .setLabel("代替実行を停止")
       .setStyle(ButtonStyle.Danger)
   );
 }
@@ -85,7 +97,7 @@ function makeStopRow(): ActionRowBuilder<ButtonBuilder> {
 async function sendStatusMessage(channel: Sendable): Promise<void> {
   try {
     statusMessage = await channel.send({
-      content: `check-events を代わりに実行中...\n<@${MENTION_USER_ID}> 正常に復旧したら自動停止します`,
+      content: `check-events を代替実行中です。\n<@${MENTION_USER_ID}> 正常に復旧したら停止してください。`,
       components: [makeStopRow()],
     });
   } catch {
@@ -109,7 +121,7 @@ async function startFallback(client: Client, channel: Sendable): Promise<void> {
   fallbackActive = true;
 
   await channel.send({
-    content: `<@${MENTION_USER_ID}> [check-events](${WORKFLOW_URL}) が10分以上正常に動作してないよ！代わりに実行しとくね！\n${WORKFLOW_URL}`,
+    content: `<@${MENTION_USER_ID}> [check-events](${WORKFLOW_URL}) が10分以上正常に動いていないようです。代替実行を開始します。\n${WORKFLOW_URL}`,
   });
 
   await sendStatusMessage(channel);
@@ -118,22 +130,23 @@ async function startFallback(client: Client, channel: Sendable): Promise<void> {
   fallbackInterval = setInterval(async () => {
     if (!fallbackActive) return;
 
-    // cronが復旧したか確認
     try {
       const runs = await fetchLatestRuns();
       const now = Date.now();
       const scheduleRun = runs.find(
-        r =>
-          r.event === "schedule" &&
-          now - new Date(r.created_at).getTime() < ALERT_THRESHOLD_MS
+        run =>
+          run.event === "schedule" &&
+          now - new Date(run.created_at).getTime() < ALERT_THRESHOLD_MS
       );
       if (scheduleRun) {
         await stopFallback();
         const ch = await getChannel(client);
-        if (ch) await ch.send("✅ check-events が復旧しました！代替実行を停止します");
+        if (ch) await ch.send("check-events が復旧しました。代替実行を停止しました。");
         return;
       }
-    } catch { /* ignore */ }
+    } catch {
+      // 次の周期で再確認する
+    }
 
     await triggerWorkflow().catch(() => {});
 
@@ -157,7 +170,6 @@ async function check(client: Client): Promise<void> {
 
   const now = Date.now();
 
-  // エラー検知
   for (const run of runs) {
     if (
       run.conclusion === "failure" &&
@@ -166,12 +178,11 @@ async function check(client: Client): Promise<void> {
     ) {
       notifiedErrorRunIds.add(run.id);
       await channel.send(
-        `<@${MENTION_USER_ID}> Check Eventsがエラーの為実行されませんでした\n${run.html_url}`
+        `<@${MENTION_USER_ID}> Check Events がエラーで完了しました。\n${run.html_url}`
       );
     }
   }
 
-  // 停止検知
   const lastRun = runs[0];
   const lastRunAge = lastRun
     ? now - new Date(lastRun.created_at).getTime()
@@ -180,6 +191,75 @@ async function check(client: Client): Promise<void> {
   if (lastRunAge > ALERT_THRESHOLD_MS && !fallbackActive) {
     await startFallback(client, channel);
   }
+}
+
+function normalizeTypes(value: unknown): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  return [...new Set(raw
+    .map(item => String(item).trim())
+    .filter(item => EVENT_TYPES.has(item)))];
+}
+
+function formatDetectedAt(value: unknown): string {
+  const date = typeof value === "string" || typeof value === "number"
+    ? new Date(value)
+    : new Date();
+  const valid = Number.isFinite(date.getTime()) ? date : new Date();
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(valid);
+}
+
+function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown): string {
+  return `${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}`;
+}
+
+export async function notifyScheduleUpdate(
+  client: Client,
+  payload: EventUpdatePayload
+): Promise<void> {
+  const channel = await getChannel(client);
+  if (!channel) throw new Error("notification thread not found");
+
+  const types = normalizeTypes(payload.types);
+  if (types.length === 0) throw new Error("updated types are empty");
+
+  const key = updateKey(types, payload.detectedAt, payload.historyUrl);
+  if (notifiedUpdateKeys.has(key)) return;
+  notifiedUpdateKeys.add(key);
+
+  const detectedAt = formatDetectedAt(payload.detectedAt);
+  const historyUrl = typeof payload.historyUrl === "string" ? payload.historyUrl : null;
+  const runUrl = typeof payload.runUrl === "string" ? payload.runUrl : null;
+
+  const lines = [
+    `<@${MENTION_USER_ID}> **スケジュール更新**`,
+    `検知時間: ${detectedAt}`,
+    `更新: ${types.join(",")}`,
+  ];
+  if (historyUrl) lines.push("", historyUrl);
+  if (runUrl) lines.push("", `Actions: ${runUrl}`);
+
+  const screenshot = await captureHistoryAllScreenshot(historyUrl);
+  if (screenshot) {
+    const file = new AttachmentBuilder(screenshot, { name: "event-history-all.png" });
+    await channel.send({ content: lines.join("\n"), files: [file] });
+    return;
+  }
+
+  await channel.send({
+    content: `${lines.join("\n")}\n\nスクリーンショットの作成に失敗しました。`,
+  });
 }
 
 export function startMonitor(client: Client): void {
@@ -210,7 +290,7 @@ export async function handleStopButton(
 
   if (interaction.user.id !== MENTION_USER_ID) {
     await interaction.reply({
-      content: "このボタンは使用できません",
+      content: "このボタンは使用できません。",
       ephemeral: true,
     });
     return;
@@ -218,7 +298,7 @@ export async function handleStopButton(
 
   await stopFallback();
   await interaction.update({
-    content: "✅ 監視モードを手動停止しました",
+    content: "監視の代替実行を手動停止しました。",
     components: [],
   });
 }
