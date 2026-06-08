@@ -224,6 +224,35 @@ function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown): s
   return `${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}`;
 }
 
+async function attachHistoryScreenshotLater(
+  channel: Sendable,
+  message: Message,
+  baseContent: string,
+  historyUrl: string | null
+): Promise<void> {
+  try {
+    const screenshot = await captureHistoryAllScreenshot(historyUrl);
+    if (!screenshot) {
+      await message.edit(`${baseContent}\n\nスクリーンショットの作成に失敗しました。`).catch(() => {});
+      return;
+    }
+
+    const file = new AttachmentBuilder(screenshot, { name: "event-history-all.png" });
+    await message.edit({
+      content: `${baseContent}\n\n履歴 all の差分スクリーンショットを添付しました。`,
+      files: [file],
+    }).catch(async () => {
+      await channel.send({
+        content: "履歴 all の差分スクリーンショットです。",
+        files: [file],
+      });
+    });
+  } catch (error) {
+    console.error("[event-update] screenshot follow-up failed:", error);
+    await message.edit(`${baseContent}\n\nスクリーンショットの作成に失敗しました。`).catch(() => {});
+  }
+}
+
 export async function notifyScheduleUpdate(
   client: Client,
   payload: EventUpdatePayload
@@ -240,26 +269,18 @@ export async function notifyScheduleUpdate(
 
   const detectedAt = formatDetectedAt(payload.detectedAt);
   const historyUrl = typeof payload.historyUrl === "string" ? payload.historyUrl : null;
-  const runUrl = typeof payload.runUrl === "string" ? payload.runUrl : null;
-
   const lines = [
     `<@${MENTION_USER_ID}> **スケジュール更新**`,
     `検知時間: ${detectedAt}`,
     `更新: ${types.join(",")}`,
   ];
   if (historyUrl) lines.push("", historyUrl);
-  if (runUrl) lines.push("", `Actions: ${runUrl}`);
 
-  const screenshot = await captureHistoryAllScreenshot(historyUrl);
-  if (screenshot) {
-    const file = new AttachmentBuilder(screenshot, { name: "event-history-all.png" });
-    await channel.send({ content: lines.join("\n"), files: [file] });
-    return;
-  }
-
-  await channel.send({
-    content: `${lines.join("\n")}\n\nスクリーンショットの作成に失敗しました。`,
+  const baseContent = lines.join("\n");
+  const message = await channel.send({
+    content: `${baseContent}\n\nスクリーンショットを生成中です...`,
   });
+  void attachHistoryScreenshotLater(channel, message, baseContent, historyUrl);
 }
 
 export function startMonitor(client: Client): void {
