@@ -8,7 +8,7 @@ import {
   Message,
   MessageCreateOptions,
 } from "discord.js";
-import { captureHistoryAllScreenshot } from "./screenshot";
+import { captureHistoryScreenshots } from "./screenshot";
 
 const OWNER = "sinsuirakv0";
 const REPO = "KBC-rakv0-event";
@@ -228,23 +228,26 @@ async function attachHistoryScreenshotLater(
   channel: Sendable,
   message: Message,
   baseContent: string,
-  historyUrl: string | null
+  historyUrl: string | null,
+  types: string[]
 ): Promise<void> {
   try {
-    const screenshot = await captureHistoryAllScreenshot(historyUrl);
-    if (!screenshot) {
+    const screenshots = await captureHistoryScreenshots(historyUrl, types);
+    if (screenshots.length === 0) {
       await message.edit(`${baseContent}\n\nスクリーンショットの作成に失敗しました。`).catch(() => {});
       return;
     }
 
-    const file = new AttachmentBuilder(screenshot, { name: "event-history-all.png" });
+    const files = screenshots.map(({ type, buffer }) =>
+      new AttachmentBuilder(buffer, { name: `event-history-${type}.png` })
+    );
     await message.edit({
-      content: `${baseContent}\n\n履歴 all の差分スクリーンショットを添付しました。`,
-      files: [file],
+      content: `${baseContent}\n\n履歴 all の差分スクリーンショットを種類別に添付しました。`,
+      files,
     }).catch(async () => {
       await channel.send({
-        content: "履歴 all の差分スクリーンショットです。",
-        files: [file],
+        content: "履歴 all の種類別差分スクリーンショットです。",
+        files,
       });
     });
   } catch (error) {
@@ -280,7 +283,7 @@ export async function notifyScheduleUpdate(
   const message = await channel.send({
     content: `${baseContent}\n\nスクリーンショットを生成中です...`,
   });
-  void attachHistoryScreenshotLater(channel, message, baseContent, historyUrl);
+  void attachHistoryScreenshotLater(channel, message, baseContent, historyUrl, types);
 }
 
 export function startMonitor(client: Client): void {
