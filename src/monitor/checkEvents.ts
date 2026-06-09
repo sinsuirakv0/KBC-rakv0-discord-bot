@@ -8,7 +8,7 @@ import {
   Message,
   MessageCreateOptions,
 } from "discord.js";
-import { captureHistoryScreenshots } from "./screenshot";
+import { captureHistoryTypeScreenshot } from "./screenshot";
 
 const OWNER = "sinsuirakv0";
 const REPO = "KBC-rakv0-event";
@@ -27,12 +27,12 @@ const EVENT_TYPES = new Set(["gatya", "sale", "item"]);
 let fallbackActive = false;
 let fallbackInterval: ReturnType<typeof setInterval> | null = null;
 let statusMessage: Message | null = null;
+let screenshotQueue: Promise<void> = Promise.resolve();
 const notifiedErrorRunIds = new Set<number>();
 const notifiedUpdateKeys = new Set<string>();
 
 interface WorkflowRun {
   id: number;
-  status: string;
   conclusion: string | null;
   created_at: string;
   updated_at: string;
@@ -44,7 +44,7 @@ interface Sendable {
   send(options: string | MessageCreateOptions): Promise<Message>;
 }
 
-interface EventUpdatePayload {
+export interface EventUpdatePayload {
   types?: unknown;
   detectedAt?: unknown;
   historyUrl?: unknown;
@@ -77,9 +77,9 @@ async function triggerWorkflow(): Promise<void> {
 
 async function getChannel(client: Client): Promise<Sendable | null> {
   try {
-    const ch = await client.channels.fetch(THREAD_ID);
-    if (!ch || !("send" in ch)) return null;
-    return ch as unknown as Sendable;
+    const channel = await client.channels.fetch(THREAD_ID);
+    if (!channel || !("send" in channel)) return null;
+    return channel as unknown as Sendable;
   } catch {
     return null;
   }
@@ -119,11 +119,9 @@ async function stopFallback(): Promise<void> {
 
 async function startFallback(client: Client, channel: Sendable): Promise<void> {
   fallbackActive = true;
-
   await channel.send({
     content: `<@${MENTION_USER_ID}> [check-events](${WORKFLOW_URL}) が10分以上正常に動いていないようです。代替実行を開始します。\n${WORKFLOW_URL}`,
   });
-
   await sendStatusMessage(channel);
   await triggerWorkflow().catch(() => {});
 
@@ -133,15 +131,14 @@ async function startFallback(client: Client, channel: Sendable): Promise<void> {
     try {
       const runs = await fetchLatestRuns();
       const now = Date.now();
-      const scheduleRun = runs.find(
-        run =>
-          run.event === "schedule" &&
-          now - new Date(run.created_at).getTime() < ALERT_THRESHOLD_MS
+      const scheduleRun = runs.find(run =>
+        run.event === "schedule" &&
+        now - new Date(run.created_at).getTime() < ALERT_THRESHOLD_MS
       );
       if (scheduleRun) {
         await stopFallback();
-        const ch = await getChannel(client);
-        if (ch) await ch.send("check-events が復旧しました。代替実行を停止しました。");
+        const target = await getChannel(client);
+        if (target) await target.send("check-events が復旧しました。代替実行を停止しました。");
         return;
       }
     } catch {
@@ -149,10 +146,9 @@ async function startFallback(client: Client, channel: Sendable): Promise<void> {
     }
 
     await triggerWorkflow().catch(() => {});
-
     if (!statusMessage) {
-      const ch = await getChannel(client);
-      if (ch) await sendStatusMessage(ch);
+      const target = await getChannel(client);
+      if (target) await sendStatusMessage(target);
     }
   }, CHECK_INTERVAL_MS);
 }
@@ -169,7 +165,6 @@ async function check(client: Client): Promise<void> {
   }
 
   const now = Date.now();
-
   for (const run of runs) {
     if (
       run.conclusion === "failure" &&
@@ -187,7 +182,6 @@ async function check(client: Client): Promise<void> {
   const lastRunAge = lastRun
     ? now - new Date(lastRun.created_at).getTime()
     : Infinity;
-
   if (lastRunAge > ALERT_THRESHOLD_MS && !fallbackActive) {
     await startFallback(client, channel);
   }
@@ -199,9 +193,9 @@ function normalizeTypes(value: unknown): string[] {
     : typeof value === "string"
       ? value.split(",")
       : [];
-  return [...new Set(raw
-    .map(item => String(item).trim())
-    .filter(item => EVENT_TYPES.has(item)))];
+  return [...new Set(
+    raw.map(item => String(item).trim()).filter(item => EVENT_TYPES.has(item))
+  )];
 }
 
 function formatDetectedAt(value: unknown): string {
@@ -224,36 +218,39 @@ function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown): s
   return `${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}`;
 }
 
-async function attachHistoryScreenshotLater(
+async function attachHistoryScreenshotsLater(
   channel: Sendable,
   message: Message,
   baseContent: string,
   historyUrl: string | null,
   types: string[]
 ): Promise<void> {
+  let attached = 0;
   try {
-    const screenshots = await captureHistoryScreenshots(historyUrl, types);
-    if (screenshots.length === 0) {
-      await message.edit(`${baseContent}\n\nスクリーンショットの作成に失敗しました。`).catch(() => {});
-      return;
-    }
+    for (const type of types) {
+      const screenshot = await captureHistoryTypeScreenshot(historyUrl, type);
+      if (!screenshot) continue;
 
-    const files = screenshots.map(({ type, buffer }) =>
-      new AttachmentBuilder(buffer, { name: `event-history-${type}.png` })
-    );
-    await message.edit({
-      content: `${baseContent}\n\n履歴 all の差分スクリーンショットを種類別に添付しました。`,
-      files,
-    }).catch(async () => {
-      await channel.send({
-        content: "履歴 all の種類別差分スクリーンショットです。",
-        files,
+      const file = new AttachmentBuilder(screenshot, {
+        name: `event-history-${type}.jpg`,
       });
-    });
+      await channel.send({
+        content: `履歴 all: **${type}**`,
+        files: [file],
+      });
+      attached++;
+
+      // Northflank上での急激なメモリ・CPU使用を避ける
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   } catch (error) {
     console.error("[event-update] screenshot follow-up failed:", error);
-    await message.edit(`${baseContent}\n\nスクリーンショットの作成に失敗しました。`).catch(() => {});
   }
+
+  const result = attached > 0
+    ? `履歴 all の差分スクリーンショットを種類別に ${attached} 枚送信しました。`
+    : "スクリーンショットの作成に失敗しました。";
+  await message.edit(`${baseContent}\n\n${result}`).catch(() => {});
 }
 
 export async function notifyScheduleUpdate(
@@ -270,11 +267,10 @@ export async function notifyScheduleUpdate(
   if (notifiedUpdateKeys.has(key)) return;
   notifiedUpdateKeys.add(key);
 
-  const detectedAt = formatDetectedAt(payload.detectedAt);
   const historyUrl = typeof payload.historyUrl === "string" ? payload.historyUrl : null;
   const lines = [
     `<@${MENTION_USER_ID}> **スケジュール更新**`,
-    `検知時間: ${detectedAt}`,
+    `検知時間: ${formatDetectedAt(payload.detectedAt)}`,
     `更新: ${types.join(",")}`,
   ];
   if (historyUrl) lines.push("", historyUrl);
@@ -283,7 +279,9 @@ export async function notifyScheduleUpdate(
   const message = await channel.send({
     content: `${baseContent}\n\nスクリーンショットを生成中です...`,
   });
-  void attachHistoryScreenshotLater(channel, message, baseContent, historyUrl, types);
+  screenshotQueue = screenshotQueue
+    .then(() => attachHistoryScreenshotsLater(channel, message, baseContent, historyUrl, types))
+    .catch(error => console.error("[event-update] screenshot queue failed:", error));
 }
 
 export function startMonitor(client: Client): void {
@@ -293,23 +291,20 @@ export function startMonitor(client: Client): void {
       setInterval(() => check(client), CHECK_INTERVAL_MS);
     }, 5000);
 
-    client.on("messageCreate", async (message) => {
+    client.on("messageCreate", async message => {
       if (message.channelId !== THREAD_ID) return;
       if (message.author.id === client.user?.id) return;
       if (!fallbackActive || !statusMessage) return;
 
       await statusMessage.delete().catch(() => {});
       statusMessage = null;
-
       const channel = await getChannel(client);
       if (channel) await sendStatusMessage(channel);
     });
   });
 }
 
-export async function handleStopButton(
-  interaction: ButtonInteraction
-): Promise<void> {
+export async function handleStopButton(interaction: ButtonInteraction): Promise<void> {
   if (interaction.customId !== "stop_monitor") return;
 
   if (interaction.user.id !== MENTION_USER_ID) {
