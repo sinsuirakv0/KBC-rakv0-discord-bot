@@ -47,10 +47,14 @@ interface Sendable {
 export interface EventUpdatePayload {
   types?: unknown;
   detectedAt?: unknown;
+  sentAt?: unknown;
+  startedAt?: unknown;
   historyUrl?: unknown;
   runUrl?: unknown;
   phase?: unknown;
   hashes?: unknown;
+  test?: unknown;
+  testId?: unknown;
   source?: unknown;
 }
 
@@ -232,8 +236,25 @@ function formatDetectedAt(value: unknown): string {
   }).format(valid);
 }
 
-function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown, phase: string, hashes: unknown): string {
+function formatElapsedSince(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const elapsedMs = Date.now() - date.getTime();
+  if (!Number.isFinite(elapsedMs)) return null;
+  return `${elapsedMs}ms`;
+}
+
+function updateKey(
+  types: string[],
+  detectedAt: unknown,
+  historyUrl: unknown,
+  phase: string,
+  hashes: unknown,
+  testId: unknown
+): string {
   const hashKey = hashes && typeof hashes === "object" ? JSON.stringify(hashes) : "";
+  if (testId) return `test|${String(testId)}|${phase}|${types.join(",")}|${hashKey}`;
   if (hashKey) return `${phase}|${types.join(",")}|${hashKey}`;
   return `${phase}|${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}|${hashKey}`;
 }
@@ -284,17 +305,26 @@ export async function notifyScheduleUpdate(
   if (types.length === 0) throw new Error("updated types are empty");
 
   const phase = normalizePhase(payload.phase);
-  const key = updateKey(types, payload.detectedAt, payload.historyUrl, phase, payload.hashes);
+  const key = updateKey(types, payload.detectedAt, payload.historyUrl, phase, payload.hashes, payload.testId);
   if (notifiedUpdateKeys.has(key)) return;
   notifiedUpdateKeys.add(key);
 
   const historyUrl = typeof payload.historyUrl === "string" ? payload.historyUrl : null;
   const hashSummary = formatHashes(payload.hashes, types);
+  const isTest = payload.test === true;
+  const sentLatency = formatElapsedSince(payload.sentAt);
+  const startedLatency = formatElapsedSince(payload.startedAt);
+  const testId = typeof payload.testId === "string" || typeof payload.testId === "number"
+    ? String(payload.testId)
+    : null;
   const lines = [
-    `<@${MENTION_USER_ID}> **${phase === "detected" ? "スケジュール更新を検知" : "スケジュール更新"}**`,
+    `<@${MENTION_USER_ID}> **${isTest ? "検知速度テスト" : phase === "detected" ? "スケジュール更新を検知" : "スケジュール更新"}**`,
     `検知時間: ${formatDetectedAt(payload.detectedAt)}`,
     `${phase === "detected" ? "検知" : "更新"}: ${types.join(",")}`,
   ];
+  if (testId) lines.push(`testId: ${testId}`);
+  if (sentLatency) lines.push(`bot受信まで: ${sentLatency}`);
+  if (startedLatency) lines.push(`script開始から: ${startedLatency}`);
   if (hashSummary) lines.push(`hash: ${hashSummary}`);
   if (historyUrl) lines.push("", historyUrl);
 
