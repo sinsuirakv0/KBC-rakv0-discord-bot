@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../../KBC-rakv0-event"
+		},
+		{
+			"path": "../../../KBC-rakv0-event-app"
+		},
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../KBC-rakv0-test"
+		},
+		{
+			"path": "../../../codex"
+		}
+	],
+	"settings": {}
+}

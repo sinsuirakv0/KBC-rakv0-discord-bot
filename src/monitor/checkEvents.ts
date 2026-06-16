@@ -49,6 +49,8 @@ export interface EventUpdatePayload {
   detectedAt?: unknown;
   historyUrl?: unknown;
   runUrl?: unknown;
+  phase?: unknown;
+  hashes?: unknown;
   source?: unknown;
 }
 
@@ -198,6 +200,22 @@ function normalizeTypes(value: unknown): string[] {
   )];
 }
 
+function normalizePhase(value: unknown): "detected" | "updated" {
+  return value === "detected" ? "detected" : "updated";
+}
+
+function formatHashes(value: unknown, types: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  const hashes = value as Record<string, unknown>;
+  const parts = types
+    .map(type => {
+      const hash = hashes[type];
+      return typeof hash === "string" && hash ? `${type}:${hash.slice(0, 8)}` : null;
+    })
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
 function formatDetectedAt(value: unknown): string {
   const date = typeof value === "string" || typeof value === "number"
     ? new Date(value)
@@ -214,8 +232,10 @@ function formatDetectedAt(value: unknown): string {
   }).format(valid);
 }
 
-function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown): string {
-  return `${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}`;
+function updateKey(types: string[], detectedAt: unknown, historyUrl: unknown, phase: string, hashes: unknown): string {
+  const hashKey = hashes && typeof hashes === "object" ? JSON.stringify(hashes) : "";
+  if (hashKey) return `${phase}|${types.join(",")}|${hashKey}`;
+  return `${phase}|${types.join(",")}|${String(detectedAt ?? "")}|${String(historyUrl ?? "")}|${hashKey}`;
 }
 
 async function attachHistoryScreenshotsLater(
@@ -263,19 +283,29 @@ export async function notifyScheduleUpdate(
   const types = normalizeTypes(payload.types);
   if (types.length === 0) throw new Error("updated types are empty");
 
-  const key = updateKey(types, payload.detectedAt, payload.historyUrl);
+  const phase = normalizePhase(payload.phase);
+  const key = updateKey(types, payload.detectedAt, payload.historyUrl, phase, payload.hashes);
   if (notifiedUpdateKeys.has(key)) return;
   notifiedUpdateKeys.add(key);
 
   const historyUrl = typeof payload.historyUrl === "string" ? payload.historyUrl : null;
+  const hashSummary = formatHashes(payload.hashes, types);
   const lines = [
-    `<@${MENTION_USER_ID}> **スケジュール更新**`,
+    `<@${MENTION_USER_ID}> **${phase === "detected" ? "スケジュール更新を検知" : "スケジュール更新"}**`,
     `検知時間: ${formatDetectedAt(payload.detectedAt)}`,
-    `更新: ${types.join(",")}`,
+    `${phase === "detected" ? "検知" : "更新"}: ${types.join(",")}`,
   ];
+  if (hashSummary) lines.push(`hash: ${hashSummary}`);
   if (historyUrl) lines.push("", historyUrl);
 
   const baseContent = lines.join("\n");
+  if (phase === "detected") {
+    await channel.send({
+      content: `${baseContent}\n\n保存処理中...`,
+    });
+    return;
+  }
+
   const message = await channel.send({
     content: `${baseContent}\n\nスクリーンショットを生成中です...`,
   });
