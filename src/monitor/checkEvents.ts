@@ -55,6 +55,7 @@ export interface EventUpdatePayload {
   hashes?: unknown;
   test?: unknown;
   testId?: unknown;
+  summaryOnly?: unknown;
   source?: unknown;
 }
 
@@ -301,8 +302,9 @@ export async function notifyScheduleUpdate(
   const channel = await getChannel(client);
   if (!channel) throw new Error("notification thread not found");
 
+  const summaryOnly = payload.summaryOnly === true;
   const types = normalizeTypes(payload.types);
-  if (types.length === 0) throw new Error("updated types are empty");
+  if (types.length === 0 && !summaryOnly) throw new Error("updated types are empty");
 
   const phase = normalizePhase(payload.phase);
   const key = updateKey(types, payload.detectedAt, payload.historyUrl, phase, payload.hashes, payload.testId);
@@ -320,12 +322,12 @@ export async function notifyScheduleUpdate(
   const lines = [
     `<@${MENTION_USER_ID}> **${isTest ? "検知速度テスト" : phase === "detected" ? "スケジュール更新を検知" : "スケジュール更新"}**`,
     `検知時間: ${formatDetectedAt(payload.detectedAt)}`,
-    `${phase === "detected" ? "検知" : "更新"}: ${types.join(",")}`,
   ];
+  if (!summaryOnly) lines.push(`${phase === "detected" ? "検知" : "更新"}: ${types.join(",")}`);
   if (testId) lines.push(`testId: ${testId}`);
   if (sentLatency) lines.push(`bot受信まで: ${sentLatency}`);
   if (startedLatency) lines.push(`script開始から: ${startedLatency}`);
-  if (hashSummary) lines.push(`hash: ${hashSummary}`);
+  if (hashSummary && !summaryOnly) lines.push(`hash: ${hashSummary}`);
   if (historyUrl) lines.push("", historyUrl);
 
   const baseContent = lines.join("\n");
