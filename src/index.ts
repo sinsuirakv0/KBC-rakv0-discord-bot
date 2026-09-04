@@ -1,12 +1,9 @@
-import { ButtonInteraction, Client, GatewayIntentBits, Message } from "discord.js";
-import dotenv from "dotenv";
-import { handleCommand } from "./commands";
-import { startMonitor, handleStopButton } from "./monitor/checkEvents";
-import { startEventUpdateServer } from "./server/eventUpdateServer";
+import { Client, GatewayIntentBits } from "discord.js";
+import { commandRegistry } from "./commands/registry";
+import { loadConfig } from "./config/env";
+import { handleDiscordMessage } from "./discord/message-handler";
 
-dotenv.config();
-
-const PREFIX = "o.";
+const config = loadConfig();
 
 const client = new Client({
   intents: [
@@ -17,30 +14,22 @@ const client = new Client({
   ],
 });
 
-startMonitor(client);
-startEventUpdateServer(client);
-
 client.once("ready", () => {
-  console.log(`Bot起動: ${client.user?.tag}`);
-
-  client.channels.fetch("1446169322392387727")
-    .then(ch => { if (ch && "send" in ch) (ch as any).send("起動しました。"); })
-    .catch(() => {});
+  console.log(`Bot started: ${client.user?.tag ?? "unknown"}`);
 });
 
-client.on("messageCreate", (message: Message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith(PREFIX)) return;
-  if (!message.inGuild()) return;
-
-  const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
-  const name = args[0].toLowerCase();
-  handleCommand(message, name, args.slice(1));
+client.on("messageCreate", async (message) => {
+  try {
+    await handleDiscordMessage(message, {
+      prefix: config.commandPrefix,
+      registry: commandRegistry,
+    });
+  } catch (error) {
+    console.error("Command execution failed.", error);
+  }
 });
 
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
-  await handleStopButton(interaction as ButtonInteraction);
+void client.login(config.discordToken).catch((error: unknown) => {
+  console.error("Discord login failed.", error);
+  process.exitCode = 1;
 });
-
-client.login(process.env.DISCORD_TOKEN);

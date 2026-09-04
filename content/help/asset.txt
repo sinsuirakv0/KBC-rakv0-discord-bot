@@ -1,0 +1,2 @@
+﻿```o.asset
+assets explorerとassetsリポジトリのURLを表示します。```
