@@ -27,6 +27,9 @@ export interface InteractiveCommandOutput {
 
 export interface CommandContext {
   inGuild: boolean;
+  guildId?: string;
+  channelId?: string;
+  userId?: string;
   reply(content: string): Promise<void>;
   interactive?: InteractiveCommandOutput;
 }

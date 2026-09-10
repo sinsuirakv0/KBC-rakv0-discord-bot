@@ -7,6 +7,7 @@ import { stCommand } from "./st/command";
 import { tutCommand } from "./tut/command";
 import { CommandDefinition, CommandRegistry } from "./types";
 import { utCommand } from "./ut/command";
+import { pushCommand } from "./push/command";
 
 export type StaticCommandResponses = Readonly<Record<string, string>>;
 
@@ -33,6 +34,7 @@ export const dynamicCommandDefinitions: readonly CommandDefinition[] = [
   withCommandHelp(stCommand),
   withCommandHelp(tutCommand),
   withCommandHelp(utCommand),
+  withCommandHelp(pushCommand),
 ];
 export const commandDefinitions: readonly CommandDefinition[] = [
   ...staticCommandDefinitions,

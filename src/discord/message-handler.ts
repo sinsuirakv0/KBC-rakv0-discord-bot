@@ -62,6 +62,9 @@ export async function handleDiscordMessage(
 
   await dispatchCommand(input, options.registry, {
     inGuild: message.inGuild(),
+    guildId: message.guildId ?? undefined,
+    channelId: message.channelId,
+    userId: message.author.id,
     async reply(content: string): Promise<void> {
       await channel.send(content);
     },

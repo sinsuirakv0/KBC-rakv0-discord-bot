@@ -1,0 +1,11 @@
+﻿通知先の設定
+
+o.push skd      スケジュール(gatya・sale・item)の通知を登録
+o.push ad       adの通知を登録
+o.push notice   popup_noticeの通知を登録
+
+実行したチャンネルが通知先になります。
+解除は末尾に off を付けます（例: o.push skd off）。
+
+設定には固定Bot管理者・健康維持メンテナー権限が必要です。
+現在、権限機能を準備中のため設定変更は保留しています。
