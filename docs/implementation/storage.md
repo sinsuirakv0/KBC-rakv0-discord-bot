@@ -1,10 +1,10 @@
-# GitHub保存基盤
+﻿# GitHub保存基盤
 
 ## 保存先と初期化
 
 正本は非公開リポジトリ sinsuirakv0/KBC-rakv0-discord-bot-data の main。
 GITHUB_DATA_OWNER / GITHUB_DATA_REPO / GITHUB_DATA_BRANCH / GITHUB_DATA_TOKEN で指定する。
-本番用には対象repoだけを選んだfine-grained PATのContents読み書き権限を使い、NorthflankのSecretに設定する。Tokenをデータrepoへ保存しない。
+新たに認証を発行する場合は対象repoだけを選んだfine-grained PATのContents読み書き権限を使い、NorthflankのSecretに設定する。Tokenをデータrepoへ保存しない。
 
 npm run storage:init が明示的にmeta.jsonを初期化し、設定復元まで確認する。
 通常起動ではmetaがない場合に自動作成しない。repo・branch・認証の404、JSON破損、未知schemaを空設定として上書きしない。
@@ -34,10 +34,10 @@ messageIdのないattemptingは結果不明。再受信時は409 reconciliation-
 稼働中のGitHub直接編集は対象外。編集後は再起動して設定キャッシュを復元する。
 GET /health/liveはプロセス生存、GET /healthはDiscord接続と起動時の保存復元完了を示す。起動後のGitHub障害は各操作が503等で失敗する。
 1文書256 KiB、設定ディレクトリ1000件未満。超過を切り捨てない。履歴整理と自動再送の期限は未実装。
-送信元Actionsの別runへ持ち越す永続outboxは未実装で、この基盤だけでは別runの通知欠落を解決しない。
+skdの送信元Actionsには別runへ持ち越す永続outboxを実装した。構造は[skd詳細通知](skd-notifications.md)を参照。
 
 ## 検証
 
 tests/storage.test.jsで認証・初期化・破損・競合・応答消失・rate limitを確認する。
 tests/push.test.jsで設定復元、同じeventIdの重複防止、結果不明の再起動後保留、カテゴリ独立性を確認する。
-実GitHubでは専用repoを作成し、metaの書き込みと読み戻し・設定ディレクトリ取得を確認した。本番NorthflankのSecret接続・デプロイは別途確認が必要。
+実GitHubでは専用repoを作成し、metaの書き込みと読み戻し・設定ディレクトリ取得を確認した。2026-09-10にNorthflankの保存接続を設定し、デプロイ後の/health/liveと/healthが200になることを確認した。

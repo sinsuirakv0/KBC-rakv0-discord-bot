@@ -71,7 +71,7 @@ export function typeTag(gachaType: number): string {
   return "";
 }
 
-function entryLabels(entry: GachaEntry): string {
+export function entryLabels(entry: GachaEntry): string {
   const labels: string[] = [];
   if (entry.guaranteed) labels.push("【確定】");
   const flag = FLAGS_MAP[entry.flags];

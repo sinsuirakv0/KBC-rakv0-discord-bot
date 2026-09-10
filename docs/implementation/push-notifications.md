@@ -6,7 +6,7 @@
 
 1. eventリポジトリのcheckAndNotifyが種類ごとの取得・保存済みハッシュ確認を終えた直後、Discord用検知通知を送る。他のTSV・JSONの取得やGitHubへの保存を待たない。
 2. このBotのnotifications/server.tsが認証付きPOST /event-updateを受信し、parsers.tsで検証する。
-3. service.tsのcreateDetectionServiceが通知IDと登録チャンネルを確認し、formatters.tsの文面をdiscord/notification-transport.ts経由で送る。eventdataの取得・解析は行わない。
+3. service.tsのcreateDetectionServiceが通知IDと登録チャンネルを確認し、formatters.tsの文面をdiscord/notification-transport.ts経由で送る。skdはready受信後に更新TSVを解析する。[詳細通知](skd-notifications.md)を参照。
 4. スケジュールのtypes通知では、同じIDの送信済みメッセージを編集する。遅れて届いたdetectedで種類を消さない。typesだけ先に届いた場合も速報を投稿してから編集する。
 
 スケジュールとad・noticeは別ID・別登録先として処理する。同じイベントの処理だけ直列化し、別イベントと別チャンネルへの送信は並行できる。GitHub更新は共通キューで直列化する。
@@ -23,7 +23,7 @@
 
 受信HTTP 200は送信・編集と保存済み状態の更新完了を示す。配送や保存の失敗は503で、送信側は同じIDで再試行できる。認証不一致401、不正データ400、非JSON415、本文上限16 KiB超過413。Secret未設定なら受信サーバーを起動しない。GET /healthはDiscord接続と保存復元状態、GET /health/liveは生存状態を返す。結果不明の再受信は409 reconciliation-required。
 
-送信側は1回のActions runにつきスケジュール通知を1つにまとめる。run内で種類が増えたら追記する。ad/noticeは種類とハッシュごとに識別する。Actionsの再実行でもGITHUB_RUN_IDが同じならIDを再利用する。別run間は監視側の直列化と保存済みハッシュ確認で通常の重複を防ぐ。
+送信側は保存済みpending単位で通知IDを使い、種類の増加を追記する。Actions再実行・別runへの持ち越しでもIDを変えない。更新前後のcommitとrawパスを含むready受信後、4分類とKBCリンクを送る。
 
 ## 保存と再送
 

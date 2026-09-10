@@ -131,3 +131,52 @@ test("receiver enforces secret, validates payload and distinguishes transient de
   assert.equal((await send(detected, "test-secret")).status, 200);
   assert.equal(count, 2);
 });
+
+const readyEvent = { ...detected, phase: "ready", types: ["gatya"], source: {
+  beforeRef: "a".repeat(40), afterRef: "b".repeat(40), files: { gatya: { path: "raw/gatya_123.tsv", hash: "c".repeat(32) } },
+} };
+const detailParts = ["gatya", "sale", "item", "mission", "KBC link"];
+
+test("ready retries and restart send each ordered detail only once", async () => {
+  const store = await fixture();
+  await store.setSubscription({ guildId: "1", channelId: "10", category: "skd" }, true);
+  const sent = [];
+  const transport = { send: async (channel, content) => { sent.push(content); return String(sent.length); }, edit: async () => {} };
+  let builds = 0;
+  const receive = createDetectionService(store, transport, async () => { if (++builds === 1) throw new Error("data unavailable"); return detailParts; });
+  await assert.rejects(receive(readyEvent));
+  assert.equal(sent.length, 1);
+  await Promise.all([receive(readyEvent), receive(readyEvent)]);
+  const restart = createDetectionService(await store.restart(), transport, async () => assert.fail("persisted details"));
+  await restart(readyEvent);
+  assert.deepEqual(sent.slice(1), detailParts);
+  assert.equal(builds, 2);
+});
+
+test("ambiguous detail send holds the remaining categories and final link", async () => {
+  const store = await fixture();
+  await store.setSubscription({ guildId: "1", channelId: "10", category: "skd" }, true);
+  const sent = [];
+  const transport = { send: async (channel, content) => { sent.push(content); if (content === "sale") throw new Error("lost response"); return String(sent.length); }, edit: async () => {} };
+  await assert.rejects(createDetectionService(store, transport, async () => detailParts)(readyEvent));
+  await assert.rejects(createDetectionService(await store.restart(), transport)(readyEvent), /reconciliation-required/);
+  assert.deepEqual(sent.slice(1), ["gatya", "sale"]);
+});
+
+test("independent receivers cannot claim the same pending message twice", async t => {
+  const store = await fixture();
+  await store.setSubscription({ guildId: "1", channelId: "10", category: "skd" }, true);
+  let release, started, count = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const sending = new Promise(resolve => { started = resolve; });
+  t.after(() => release());
+  const transport = { send: async () => { count++; started(); await gate; return "100"; }, edit: async () => {} };
+  const first = createDetectionService(store, transport);
+  const second = createDetectionService(await store.restart(), transport);
+  const completed = Promise.allSettled([first(detected), second(detected)]);
+  await sending;
+  release();
+  await completed;
+  await second(detected);
+  assert.equal(count, 1);
+});

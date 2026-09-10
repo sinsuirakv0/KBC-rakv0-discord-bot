@@ -84,7 +84,7 @@ export interface GachaJsonWithMappings {
 export interface GatyaDataSource {
   fetchGachaJson(): Promise<GachaJson>;
   fetchJsonWithMappings(): Promise<GachaJsonWithMappings>;
-  fetchScheduleData(): Promise<GachaScheduleData>;
+  fetchScheduleData(gacha?: GachaJson, item?: ItemScheduleJson): Promise<GachaScheduleData>;
   fetchLookupData(): Promise<GachaLookupData>;
 }
 

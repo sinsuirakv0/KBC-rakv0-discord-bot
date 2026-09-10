@@ -27,3 +27,7 @@ archive/
 !tests/st.test.js
 !tests/tut.test.js
 !tests/ut.test.js
+
+!tests/skd.test.js
+!docs/implementation/skd-notifications.md
+!docs/requirements/skd-notifications.md

@@ -52,17 +52,17 @@ export function createRemoteSaleDataSource(
     async fetchSaleJson() {
       return parseSaleText(await fetchText(urls.saleJson, timeoutMs, fetchImpl));
     },
-    async fetchDisplayData() {
-      const [saleText, saleNamesText, allDayText, missionNamesText, cardSettingText] =
+    async fetchDisplayData(document) {
+      const [sale, saleNamesText, allDayText, missionNamesText, cardSettingText] =
         await Promise.all([
-          fetchText(urls.saleJson, timeoutMs, fetchImpl),
+          document ?? fetchText(urls.saleJson, timeoutMs, fetchImpl).then(parseSaleText),
           fetchText(urls.saleNames, timeoutMs, fetchImpl),
           fetchText(urls.allDayEventNames, timeoutMs, fetchImpl),
           fetchText(urls.missionNames, timeoutMs, fetchImpl),
           fetchText(urls.cardSetting, timeoutMs, fetchImpl),
         ]);
       return {
-        sale: parseSaleText(saleText),
+        sale,
         saleNames: parseIdNameCsv(saleNamesText),
         allDayEventNames: parseAllDayEventTsv(allDayText),
         missionNames: parseIdNameCsv(missionNamesText),

@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node --test tests/commands.test.js tests/sale.test.js tests/gatya.test.js tests/item.test.js tests/st.test.js tests/tut.test.js tests/ut.test.js tests/push.test.js tests/storage.test.js",
+    "test": "npm run build && node --test tests/commands.test.js tests/sale.test.js tests/gatya.test.js tests/item.test.js tests/st.test.js tests/tut.test.js tests/ut.test.js tests/push.test.js tests/storage.test.js tests/skd.test.js",
     "storage:init": "npm run build && node dist/storage/initialize.js"
   },
   "dependencies": {

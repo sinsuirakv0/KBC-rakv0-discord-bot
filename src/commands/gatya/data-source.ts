@@ -120,7 +120,7 @@ export function createRemoteGatyaDataSource(
       const [gacha, seriesMappings] = await Promise.all([fetchJson(), fetchMappings()]);
       return { gacha, seriesMappings };
     },
-    async fetchScheduleData() {
+    async fetchScheduleData(providedGacha, providedItem) {
       const [
         gacha,
         item,
@@ -129,8 +129,8 @@ export function createRemoteGatyaDataSource(
         optionalShortNames,
         seriesMappings,
       ] = await Promise.all([
-        fetchJson(),
-        fetchItemJson(),
+        providedGacha ?? fetchJson(),
+        providedItem ?? fetchItemJson(),
         load(urls.saleNames),
         fetchGachaNames(),
         fetchShortNames(),

@@ -1,4 +1,4 @@
-# Northflank無料枠での保存方針
+﻿# Northflank無料枠での保存方針
 
 2026-09-06採用。ユーザー決定は[保存要件](../requirements/storage.md)、現在のコードは[保存実装](../implementation/storage.md)を参照。
 
@@ -16,6 +16,6 @@ Discord送信とGitHub記録を同一トランザクションにはできない�
 
 - 保存待ちやAPI制限が運用を妨げる規模ではDBへ移行する。保存確認を省くことで対処しない。
 - 複数プロセスの同時稼働が必要なら分散排他を再設計する。Northflankの旧新切替方法は本番設定時に確認する。
-- 送信側event repoの永続outboxは別実装。未配信payloadと同じeventIdを次のActions runへ持ち越し、原本保存済みでも配送待ちを捨てない。
+- 送信側event repoにskdの永続outboxを実装済み。未配信payloadと同じeventIdを次のActions runへ持ち越し、原本保存済みでも配送待ちを捨てない。
 - 記録の保持期間、再送期限、整理方法は未決定。自動削除は行わない。
 - 権限コマンドと健康維持メンテナーの操作範囲は後続作業。

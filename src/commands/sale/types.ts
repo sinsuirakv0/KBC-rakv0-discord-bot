@@ -41,7 +41,7 @@ export interface SaleDisplayData {
 
 export interface SaleDataSource {
   fetchSaleJson(): Promise<SaleJson>;
-  fetchDisplayData(): Promise<SaleDisplayData>;
+  fetchDisplayData(sale?: SaleJson): Promise<SaleDisplayData>;
 }
 
 export type SaleRequest =

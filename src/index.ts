@@ -7,6 +7,7 @@ import { createDiscordNotificationTransport } from "./discord/notification-trans
 import { createDetectionService } from "./notifications/service";
 import { createEventUpdateServer } from "./notifications/server";
 import { getNotificationStore, isStorageReady, startStorage } from "./storage/runtime";
+import { createScheduleDetailsBuilder } from "./notifications/skd/data-source";
 
 const config = loadConfig();
 const pushConfig = loadPushConfig();
@@ -28,7 +29,7 @@ client.once("ready", () => {
       secret: pushConfig.secret,
       receive: (() => {
         let receive: ReturnType<typeof createDetectionService> | undefined;
-        return event => (receive ??= createDetectionService(getNotificationStore(), createDiscordNotificationTransport(client)))(event);
+        return event => (receive ??= createDetectionService(getNotificationStore(), createDiscordNotificationTransport(client), createScheduleDetailsBuilder()))(event);
       })(),
       isReady: () => client.isReady() && isStorageReady(),
     });

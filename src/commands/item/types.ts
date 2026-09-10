@@ -54,7 +54,7 @@ export interface ItemDisplayData {
 
 export interface ItemDataSource {
   fetchItemJson(): Promise<ItemJson>;
-  fetchDisplayData(): Promise<ItemDisplayData>;
+  fetchDisplayData(item?: ItemJson): Promise<ItemDisplayData>;
 }
 
 export type ItemRequest =

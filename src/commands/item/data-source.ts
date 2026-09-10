@@ -48,14 +48,14 @@ export function createRemoteItemDataSource(
     async fetchItemJson() {
       return parseItemText(await load(urls.itemJson));
     },
-    async fetchDisplayData() {
-      const [itemText, itemNamesText, saleNamesText] = await Promise.all([
-        load(urls.itemJson),
+    async fetchDisplayData(document) {
+      const [item, itemNamesText, saleNamesText] = await Promise.all([
+        document ?? load(urls.itemJson).then(parseItemText),
         load(urls.itemNames),
         load(urls.saleNames),
       ]);
       return {
-        item: parseItemText(itemText),
+        item,
         itemNames: parseItemNameCsv(itemNamesText),
         saleNames: parseIdNameCsv(saleNamesText),
       };
