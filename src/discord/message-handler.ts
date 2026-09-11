@@ -1,8 +1,9 @@
-import { Message } from "discord.js";
+﻿import { Message } from "discord.js";
 import { dispatchCommand } from "../commands/dispatcher";
 import { parseCommandInput } from "../commands/input";
 import { CommandRegistry } from "../commands/types";
 import { SentCommandMessage } from "../commands/types";
+import { isBotAdministrator } from "../config/administrators";
 
 export interface MessageHandlerOptions {
   prefix: string;
@@ -65,6 +66,7 @@ export async function handleDiscordMessage(
     guildId: message.guildId ?? undefined,
     channelId: message.channelId,
     userId: message.author.id,
+    isBotAdministrator: isBotAdministrator(message.author.id),
     async reply(content: string): Promise<void> {
       await channel.send(content);
     },

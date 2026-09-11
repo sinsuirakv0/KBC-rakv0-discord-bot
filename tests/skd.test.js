@@ -64,6 +64,7 @@ test("four separate code blocks each show at most five rows, then the KBC link",
   }, new Date("2026-09-10T00:00:00Z"), "https://example.com/history");
   assert.deepEqual(parts.map(p => p.split("\n")[0]), ["**gatya**", "**sale**", "**item**", "**mission**", "**KBC**"]);
   for (const content of parts.slice(0, 4)) {
+    assert.doesNotMatch(content, /🟠/);
     assert.equal((content.match(/^    \d+ /gm) || []).length, 5);
     assert.equal((content.match(/```/g) || []).length, 2);
     assert.match(content, /その他2件/);
@@ -111,4 +112,42 @@ test("ready notifications compare the latest previous raw TSV and reject incompl
   await assert.rejects(builder(parseDetectionEvent(event)), /Invalid schedule history tree/);
   tree.truncated = false; tree.tree = [];
   await assert.rejects(builder(parseDetectionEvent(event)), /Previous sale TSV unavailable/);
+});
+
+
+test("skd selects 100-second updates and accepts latest, slash dates and spaced dates", async () => {
+  const { parseSkdDate } = require("../dist/commands/skd/parsers");
+  const { selectScheduleUpdate } = require("../dist/commands/skd/domain");
+  const { createSkdDataSource } = require("../dist/commands/skd/data-source");
+  const { createSkdCommand } = require("../dist/commands/skd/command");
+  const base = Date.parse("2026-07-30T02:00:00Z") / 1000;
+  const file = (type, timestamp) => ({ type, timestamp, path: "raw/" + type + "_" + timestamp + ".tsv" });
+  const batch = [file("gatya", base), file("sale", base + 100)];
+  assert.equal(selectScheduleUpdate(batch).files.length, 2);
+  assert.equal(selectScheduleUpdate([...batch, file("item", base + 101)]).timestamp, base + 101);
+  assert.equal(parseSkdDate(["2026/7/30"]), "2026-07-30");
+  assert.equal(parseSkdDate(["2026", "07", "30"]), "2026-07-30");
+  const files = [file("item", base + 2 * 86400), file("gatya", base - 86400), file("sale", base - 86400 + 1), ...batch, file("gatya", base + 10)];
+  const calls = [];
+  const dataSource = createSkdDataSource({
+    readHistorySnapshot: async () => ({ ref: "a".repeat(40), files }),
+    buildDetails: async (comparisons, detectedAt) => { calls.push({ comparisons, detectedAt }); return ["schedule list", "KBC link"]; },
+  });
+  const command = createSkdCommand(dataSource);
+  const replies = [];
+  const context = { inGuild: true, reply: async text => replies.push(text) };
+  await command.execute(context, []);
+  assert.deepEqual(calls[0].comparisons.map(pair => pair.type), ["item"]);
+  await command.execute(context, ["2026/07/31"]);
+  assert.deepEqual(calls[1].comparisons.map(pair => pair.type), ["gatya", "sale"]);
+  assert.equal(calls[1].comparisons[0].before.path, file("gatya", base - 86400).path);
+  assert.equal(calls[1].comparisons[0].after.path, file("gatya", base + 10).path);
+  assert.ok(replies[3].startsWith("**スケジュール更新を検知**"));
+  assert.ok(replies[3].includes("2026/07/30"));
+  assert.deepEqual(replies.slice(4, 6), ["schedule list", "KBC link"]);
+  await command.execute(context, ["2026", "07", "30"]);
+  assert.deepEqual(calls[2], calls[1]);
+  await command.execute(context, ["2026/02/30"]);
+  assert.equal(calls.length, 3);
+  assert.ok(replies.at(-1).includes("使い方"));
 });

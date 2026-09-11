@@ -209,7 +209,7 @@ export function formatSchedule(
 
   const lines: string[] = [];
   for (const group of groups.values()) {
-    lines.push(`${group.active ? "🟢" : "🟠"} [${group.period}]`);
+    lines.push(`${group.active ? "🟢 " : ""}[${group.period}]`);
     for (const [giftType, name] of [...group.giftItems].sort(([left], [right]) => left - right)) {
       lines.push(`    ${giftType} ${name}`);
     }

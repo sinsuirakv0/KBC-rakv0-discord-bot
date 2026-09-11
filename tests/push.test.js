@@ -42,15 +42,19 @@ test("detection validation and JST messages follow the category contract", () =>
   }
 });
 
-test("push permission is deferred; authorized subscriptions are idempotent and persistent", async t => {
+test("fixed administrators can configure subscriptions and other users cannot", async t => {
   const store = await fixture(t);
   const replies = [];
   const context = { inGuild: true, guildId: "1", channelId: "10", userId: "20", reply: async text => replies.push(text) };
   assert.deepEqual(parsePushRequest(["notice", "off"]), { category: "notice", enabled: false });
   assert.equal(parsePushRequest(["notice", "oops"]), undefined);
   await createPushCommand().execute(context, ["skd"]);
-  assert.match(replies[0], /準備中/);
-  const command = createPushCommand({ getStore: () => store, canConfigure: async () => true });
+  assert.match(replies[0], /権限が必要/);
+  const command = createPushCommand({ getStore: () => store });
+  for (const userId of ["1447045405257760820", "1347420765410295928", "1138400546823340102"]) {
+    await command.execute({ ...context, userId }, ["skd"]);
+  }
+  context.userId = "1447045405257760820";
   await command.execute(context, ["skd"]);
   await command.execute(context, ["skd"]);
   await command.execute(context, ["ad"]);

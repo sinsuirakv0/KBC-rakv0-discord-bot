@@ -16,7 +16,7 @@ npm run storage:init が明示的にmeta.jsonを初期化し、設定復元ま�
 - GuildSettingsStore.restore: config/guilds/<guildId>.jsonを全て検証後、メモリを置き換える。setSubscriptionとsetHealthMaintainerRoleは同じguild文書の他設定を保ち、保存後にキャッシュを更新する。
 - NotificationStore.update: eventIdのSHA256をファイル名としたnotifications/events/<hash>.jsonを更新。イベント単位に保存し、全履歴を毎回書き直さない。
 - initializeStorage/startStorage: metaとguild設定の復元後にready。失敗時は30秒以上の間隔で再試行し、他コマンドを停止しない。イベント履歴は受信時に正本から読み込む。
-- config/administrators.ts: 固定管理者IDと判定関数。権限コマンドへの接続は後続作業。
+- config/administrators.ts: 起動時に読み込む固定管理者3人のIDと判定関数。Discordメッセージの送信者IDを照合し、CommandContext.isBotAdministratorへ渡す。index.tsは起動ログへ読み込んだ人数を出す。o.pushはこの判定を使い、健康維持メンテナーの設定コマンドは後続作業。
 
 設定schemaVersion=1にはguildId、healthMaintainerRoleId、subscriptionsを保持する。イベントschemaVersion=1にはeventとdeliveriesを保持する。SHAを更新競合の検出に使う。
 

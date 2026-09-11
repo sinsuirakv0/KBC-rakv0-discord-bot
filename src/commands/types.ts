@@ -1,4 +1,4 @@
-export interface ParsedCommandInput {
+﻿export interface ParsedCommandInput {
   name: string;
   args: readonly string[];
 }
@@ -30,6 +30,7 @@ export interface CommandContext {
   guildId?: string;
   channelId?: string;
   userId?: string;
+  isBotAdministrator?: boolean;
   reply(content: string): Promise<void>;
   interactive?: InteractiveCommandOutput;
 }

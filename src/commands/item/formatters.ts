@@ -210,7 +210,7 @@ export function formatItemSchedule(
 
   const lines: string[] = [];
   for (const group of groups.values()) {
-    lines.push(`${group.active ? "🟢" : "🟠"} [${group.period}]`);
+    lines.push(`${group.active ? "🟢 " : ""}[${group.period}]`);
     for (const entry of group.entries) {
       const amount = entry.gift.giftAmount > 0 ? ` ×${entry.gift.giftAmount}` : "";
       lines.push(

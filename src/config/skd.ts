@@ -1,8 +1,10 @@
 ﻿export const skdSourceBaseUrl = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event";
 export const skdHttpTimeoutMs = 15_000;
 export const skdSourceTreeUrl = "https://api.github.com/repos/sinsuirakv0/KBC-rakv0-event/git/trees";
+export const skdSourceRevisionUrl = "https://api.github.com/repos/sinsuirakv0/KBC-rakv0-event/git/ref/heads/main";
 export const skdMaxDocumentBytes = 4 * 1024 * 1024;
 export const skdDisplayLimit = 5;
+export const skdHistoryGroupSeconds = 100;
 
 export function skdHistoryUrl(rawPaths: string[]): string {
   const url = new URL(process.env.EVENT_SITE_URL || "https://kbc-rakv0-event.vercel.app/");

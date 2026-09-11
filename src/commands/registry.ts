@@ -1,4 +1,4 @@
-import responses from "./commands.json";
+﻿import responses from "./commands.json";
 import { gatyaCommand } from "./gatya/command";
 import { createHelpCommand, withCommandHelp } from "./help/command";
 import { itemCommand } from "./item/command";
@@ -8,6 +8,7 @@ import { tutCommand } from "./tut/command";
 import { CommandDefinition, CommandRegistry } from "./types";
 import { utCommand } from "./ut/command";
 import { pushCommand } from "./push/command";
+import { skdCommand } from "./skd/command";
 
 export type StaticCommandResponses = Readonly<Record<string, string>>;
 
@@ -35,6 +36,7 @@ export const dynamicCommandDefinitions: readonly CommandDefinition[] = [
   withCommandHelp(tutCommand),
   withCommandHelp(utCommand),
   withCommandHelp(pushCommand),
+  withCommandHelp(skdCommand),
 ];
 export const commandDefinitions: readonly CommandDefinition[] = [
   ...staticCommandDefinitions,

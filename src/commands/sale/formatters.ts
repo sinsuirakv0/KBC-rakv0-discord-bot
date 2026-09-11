@@ -231,7 +231,7 @@ export function formatSchedule(
 
   const lines: string[] = [];
   for (const group of groupScheduleItems(items)) {
-    lines.push(`${group.active ? "🟢" : "🟠"} [${group.period}]`);
+    lines.push(`${group.active ? "🟢 " : ""}[${group.period}]`);
     for (const item of group.items) {
       for (const id of item.stageIds) {
         lines.push(`    ${id} ${getStageName(id, nameSources)} ${item.duration}`);

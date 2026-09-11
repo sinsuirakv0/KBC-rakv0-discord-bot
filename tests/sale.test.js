@@ -150,9 +150,9 @@ test("schedule hides missions and permanent entries and applies representative a
   assert.match(output, /102 代表ステージ <1h30m>/);
   assert.match(output, /555 同時刻ステージ <1h30m>/);
   assert.doesNotMatch(output, /999 対象ステージA/);
-  assert.match(output, /🟠 \[1\/2\(金\) 10:00~\]/);
-  assert.doesNotMatch(output, /\n\n🟠/);
-  assert.doesNotMatch(output, /🟠 <2d>/);
+  assert.match(output, /\[1\/2\(金\) 10:00~\]/);
+  assert.doesNotMatch(output, /\n\n\[/);
+  assert.doesNotMatch(output, /🟠/);
   assert.match(output, /777 補完ステージ <2d>/);
   assert.match(output, /778 補完ステージB <2d>/);
   assert.doesNotMatch(output, /8000/);
@@ -208,7 +208,7 @@ test("schedule groups entries with the same end date despite different start dat
     new Date("2025-12-31T00:00:00.000Z"),
   );
 
-  assert.equal((output.match(/🟠 \[1\/5\(月\) 10:00~\]/g) ?? []).length, 1);
+  assert.equal((output.match(/\[1\/5\(月\) 10:00~\]/g) ?? []).length, 1);
   assert.match(output, /555 同時刻ステージ <5d>/);
   assert.match(output, /556 終了日時違いステージ <4d1h>/);
 });

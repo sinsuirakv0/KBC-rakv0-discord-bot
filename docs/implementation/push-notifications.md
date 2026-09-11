@@ -33,7 +33,7 @@ NotificationStoreはGitHubへイベント単位で保存する。送信前にatt
 
 commands/push/parsers.tsが種類とoffを解析し、command.tsがcanConfigureを確認してNotificationStore.setSubscriptionを呼ぶ。登録先はコマンド実行チャンネル。Guild限定で、CommandContextのguildId/channelId/userIdをDiscordアダプターから渡す。
 
-canConfigureは将来の固定Bot管理者・健康維持メンテナー判定を差し込む箇所。現在の本番定義はundefinedを返し、準備中の返信で登録変更を止める。テストではtrue/falseを差し替える。Discord標準の管理権限を仮の代替として使わない。
+canConfigureの本番定義はCommandContext.isBotAdministratorを使い、直接実行時は送信者IDを固定管理者リストへ照合する。固定管理者3人を許可し、他の利用者を拒否する。テストでは判定と保存先を差し替えられる。健康維持メンテナーの設定コマンドは未実装で、Discord標準の管理権限を代替には使わない。
 
 ## 設定・検証
 

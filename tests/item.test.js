@@ -138,10 +138,10 @@ test("item schedule follows sale grouping and includes 301 and 302", () => {
   assert.equal((output.match(/🟢 \[~1\/10\(土\) 10:00\]/g) ?? []).length, 1);
   assert.match(output, /301 ガチャ半額リセット（単発）/);
   assert.match(output, /828 一覧用タイトル ×2/);
-  assert.match(output, /🟠 \[1\/20\(火\) 10:00~\]/);
+  assert.match(output, /\[1\/20\(火\) 10:00~\]/);
   assert.match(output, /302 ガチャ半額リセット（11連）/);
   assert.doesNotMatch(output, /2030|eventId: 3/);
-  assert.doesNotMatch(output, /\n\n🟠/);
+  assert.doesNotMatch(output, /🟠|\n\n\[/);
 });
 
 test("item detail keeps the legacy fields and adds sanitized gift detail", () => {

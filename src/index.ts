@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits } from "discord.js";
+﻿import { Client, GatewayIntentBits } from "discord.js";
 import { commandRegistry } from "./commands/registry";
 import { loadConfig } from "./config/env";
 import { handleDiscordMessage } from "./discord/message-handler";
@@ -8,6 +8,7 @@ import { createDetectionService } from "./notifications/service";
 import { createEventUpdateServer } from "./notifications/server";
 import { getNotificationStore, isStorageReady, startStorage } from "./storage/runtime";
 import { createScheduleDetailsBuilder } from "./notifications/skd/data-source";
+import { botAdministratorIds } from "./config/administrators";
 
 const config = loadConfig();
 const pushConfig = loadPushConfig();
@@ -24,6 +25,7 @@ const client = new Client({
 
 client.once("ready", () => {
   console.log(`Bot started: ${client.user?.tag ?? "unknown"}`);
+  console.log(`Bot administrators loaded: ${botAdministratorIds.length}`);
   if (pushConfig.secret) {
     const server = createEventUpdateServer({
       secret: pushConfig.secret,

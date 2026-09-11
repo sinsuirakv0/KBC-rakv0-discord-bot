@@ -152,7 +152,7 @@ test("schedule uses sale date grouping and aggregates gatyaIDs by series", () =>
   const output = formatSchedule(data, new Date("2026-01-07T00:00:00.000Z"), null);
 
   assert.equal((output.match(/🟢 \[~1\/10\(土\) 10:00\]/g) ?? []).length, 1);
-  assert.equal((output.match(/🟠 \[1\/20\(火\) 10:00~\]/g) ?? []).length, 1);
+  assert.equal((output.match(/\[1\/20\(火\) 10:00~\]/g) ?? []).length, 1);
   assert.equal((output.match(/101 s7 短縮シリーズ名【確定】【step up】/g) ?? []).length, 2);
   assert.equal((output.match(/102 s7 短縮シリーズ名【確定】【step up】/g) ?? []).length, 2);
   assert.match(output, /301 ガチャ半額リセット（単発）/);
@@ -169,7 +169,7 @@ test("schedule uses sale date grouping and aggregates gatyaIDs by series", () =>
     /302 ガチャ半額リセット（11連）/,
   );
   assert.doesNotMatch(output, /短縮シリーズ名 【確定】|【確定】 【step up】/);
-  assert.doesNotMatch(output, /\n\n🟠/);
+  assert.doesNotMatch(output, /🟠|\n\n\[/);
 });
 
 test("gatya detail shows individual name, seriesID, inherited labels, and selected nonzero rates", () => {

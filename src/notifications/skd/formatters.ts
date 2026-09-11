@@ -38,7 +38,7 @@ function formatSection(name: string, rows: Row[], now: Date): string {
     const active = start <= now;
     const date = active ? parseHeaderDate(row.header.endDate, row.header.endTime) : start;
     const key = `${active}:${active ? row.header.endDate : row.header.startDate}`;
-    const group = groups.get(key) ?? { title: active ? `🟢 [~${formatJstShort(date)}]` : `🟠 [${formatJstShort(date)}~]`, labels: [] };
+    const group = groups.get(key) ?? { title: active ? `🟢 [~${formatJstShort(date)}]` : `[${formatJstShort(date)}~]`, labels: [] };
     const label = row.label.replace(/`/g, " ").replace(/\r\n?/g, "\n");
     const lines = (name === "mission" ? label : label.replace(/\n/g, " ")).split("\n");
     group.labels.push(lines.map(line => `    ${line}`).join("\n").slice(0, 244));

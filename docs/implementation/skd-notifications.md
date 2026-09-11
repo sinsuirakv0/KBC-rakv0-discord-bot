@@ -14,6 +14,14 @@ formatAddedSchedulesは追加分を開始日時順に並べ、終了済み・常
 
 追加がない種類は省き、formatChangesが4種類の日時・必要バージョン・上限バージョンの変更を1つのコードブロックへまとめる。表示順はgatya、sale、item、mission、上限は全体で5件。項目ごとに変更前→変更後を示す。変更項目は名前120文字・全体360文字までとし、2000文字以内に収める。変更がない場合は欄ごと省き、最後にKBCリンクを付ける。
 
+## 履歴コマンド
+
+commands/skd/parsers.tsのparseSkdDateはスラッシュ・空白区切りの日付を検証する。domain.tsのselectScheduleUpdateはrawの保存時刻を昇順に並べ、先頭から100秒以内のまとまりを作って最新または指定日に最も近い更新を選ぶ。100秒の境界は含み、100秒間隔の連鎖でまとまりを広げない。
+
+commands/skd/data-source.tsのcreateSkdDataSourceはmainのcommitを固定して履歴を読み、更新内の種類別の最後のTSVと、更新開始より前のTSVを対応させる。通知側と共通のcreateScheduleDataSource.buildDetailsで追加・変更を解析する。createScheduleDetailsBuilderは既存のWebhook入力を同じ比較処理へ渡すアダプターとして維持する。
+
+command.tsは見出しと本文を順番に実行チャンネルへ返す。formatDetectionの時刻ラベルを切り替えてTSV保存時刻であることを示す。履歴の閲覧はprivate保存基盤に依存せず、配送記録の作成や登録先への再通知もしない。registryへ明示登録し、従来のサイトURLはcommands.jsonのskdsiteを保つ。🟠の削除は通知と3つの通常一覧のformattersへ反映した。
+
 ## 配送記録
 
 新しいphase=readyはsource { beforeRef, afterRef, files }を持つ。filesのキーは今回のtypesと一致し、pathとhashを持つ。既存detected/types/ad/noticeの入力契約は維持する。

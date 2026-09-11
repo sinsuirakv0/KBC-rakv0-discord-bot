@@ -33,18 +33,19 @@ test("registry derives every static command from commands.json", () => {
   assert.equal(commandRegistry.resolve("enemy"), undefined);
   assert.equal(commandRegistry.resolve("ut")?.name, "ut");
   assert.equal(commandRegistry.resolve("help")?.name, "help");
+  assert.equal(commandRegistry.resolve("skd")?.name, "skd");
   assert.deepEqual(
     new Set(staticCommandDefinitions.map((command) => command.name)),
     new Set(Object.keys(staticResponses)),
   );
   assert.deepEqual(
     new Set(commandDefinitions.map((command) => command.name)),
-    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "push"]),
+    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "push", "skd"]),
   );
 });
 
 test("all registered commands read editable BOM-prefixed help files", async () => {
-  const commandNames = [...Object.keys(staticResponses), "sale", "gatya", "item", "st", "tut", "ut", "push"];
+  const commandNames = [...Object.keys(staticResponses), "sale", "gatya", "item", "st", "tut", "ut", "push", "skd"];
   for (const commandName of ["index", ...commandNames]) {
     const bytes = fs.readFileSync(path.join("content", "help", `${commandName}.txt`));
     assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
@@ -135,4 +136,16 @@ test("dispatcher ignores unknown commands and guild-only commands in DMs", async
     false,
   );
   assert.deepEqual(replies, []);
+});
+
+
+test("Discord messages recognize exactly the three configured administrators", async () => {
+  const { handleDiscordMessage } = require("../dist/discord/message-handler");
+  const { botAdministratorIds } = require("../dist/config/administrators");
+  const recognized = [];
+  const registry = createCommandRegistry([{ name: "probe", guildOnly: true, async execute(context) { recognized.push(context.isBotAdministrator); } }]);
+  for (const id of [...botAdministratorIds, "999999999999999999"]) {
+    await handleDiscordMessage({ author: { id, bot: false }, content: "o.probe", guildId: "1", channelId: "2", inGuild: () => true, channel: { send: async () => {} } }, { prefix: "o.", registry });
+  }
+  assert.deepEqual(recognized, [true, true, true, false]);
 });

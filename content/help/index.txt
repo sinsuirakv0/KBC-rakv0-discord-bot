@@ -2,7 +2,8 @@
 
 o.ping   応答確認
 o.home   KBCホーム
-o.skd    スケジュールサイト一覧
+o.skd    最新・指定日のスケジュール更新
+o.skdsite スケジュールサイト一覧
 o.asset  アセット関係のURL
 o.sale   saleスケジュールと詳細
 o.gatya  gatyaスケジュールと詳細
@@ -10,6 +11,6 @@ o.item   itemスケジュールと詳細
 o.ut     味方キャラ検索
 o.tut    敵キャラ検索
 o.st     ステージ検索
-o.push   更新通知先の設定（権限機能準備中）
+o.push   更新通知先の設定（固定Bot管理者）
 
 詳しい使い方は o.<command> help で表示できます。```
