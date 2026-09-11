@@ -135,7 +135,7 @@ test("receiver enforces secret, validates payload and distinguishes transient de
 const readyEvent = { ...detected, phase: "ready", types: ["gatya"], source: {
   beforeRef: "a".repeat(40), afterRef: "b".repeat(40), files: { gatya: { path: "raw/gatya_123.tsv", hash: "c".repeat(32) } },
 } };
-const detailParts = ["gatya", "sale", "item", "mission", "KBC link"];
+const detailParts = ["gatya", "sale", "item", "mission", "変更", "KBC link"];
 
 test("ready retries and restart send each ordered detail only once", async () => {
   const store = await fixture();
@@ -151,6 +151,8 @@ test("ready retries and restart send each ordered detail only once", async () =>
   await restart(readyEvent);
   assert.deepEqual(sent.slice(1), detailParts);
   assert.equal(builds, 2);
+  await createDetectionService(store, transport, async () => ["KBC link"])({ ...readyEvent, eventId: "skd:link-only" });
+  assert.equal(sent.at(-1), "KBC link");
 });
 
 test("ambiguous detail send holds the remaining categories and final link", async () => {
@@ -158,7 +160,7 @@ test("ambiguous detail send holds the remaining categories and final link", asyn
   await store.setSubscription({ guildId: "1", channelId: "10", category: "skd" }, true);
   const sent = [];
   const transport = { send: async (channel, content) => { sent.push(content); if (content === "sale") throw new Error("lost response"); return String(sent.length); }, edit: async () => {} };
-  await assert.rejects(createDetectionService(store, transport, async () => detailParts)(readyEvent));
+  await assert.rejects(createDetectionService(store, transport, async () => detailParts.filter(part => part !== "変更"))(readyEvent));
   await assert.rejects(createDetectionService(await store.restart(), transport)(readyEvent), /reconciliation-required/);
   assert.deepEqual(sent.slice(1), ["gatya", "sale"]);
 });

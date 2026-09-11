@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+﻿import { createHash } from "node:crypto";
 import { JsonStore } from "../storage/json-store";
 import { GuildSettingsStore } from "../storage/guild-settings";
 import { StorageError } from "../storage/types";
@@ -20,9 +20,9 @@ function parseRecord(value: unknown): EventRecord {
   for (const item of record.deliveries) {
     if (!item || typeof item.channelId !== "string" || !/^\d+$/.test(item.channelId)
       || !validMessage(item) || (item.followUps !== undefined && (!Array.isArray(item.followUps)
-        || item.followUps.length !== 5 || item.followUps.some(part => !validMessage(part))))) throw new StorageError("invalid-delivery");
+        || item.followUps.length !== record.detailContents?.length || item.followUps.some(part => !validMessage(part))))) throw new StorageError("invalid-delivery");
   }
-  if (record.detailContents !== undefined && (!Array.isArray(record.detailContents) || record.detailContents.length !== 5
+  if (record.detailContents !== undefined && (!Array.isArray(record.detailContents) || record.detailContents.length < 1 || record.detailContents.length > 6
     || record.detailContents.some(content => typeof content !== "string" || content.length > 2000))) throw new StorageError("invalid-details");
   return record;
 }

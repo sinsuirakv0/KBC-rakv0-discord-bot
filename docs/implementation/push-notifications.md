@@ -23,7 +23,7 @@
 
 受信HTTP 200は送信・編集と保存済み状態の更新完了を示す。配送や保存の失敗は503で、送信側は同じIDで再試行できる。認証不一致401、不正データ400、非JSON415、本文上限16 KiB超過413。Secret未設定なら受信サーバーを起動しない。GET /healthはDiscord接続と保存復元状態、GET /health/liveは生存状態を返す。結果不明の再受信は409 reconciliation-required。
 
-送信側は保存済みpending単位で通知IDを使い、種類の増加を追記する。Actions再実行・別runへの持ち越しでもIDを変えない。更新前後のcommitとrawパスを含むready受信後、4分類とKBCリンクを送る。
+送信側は保存済みpending単位で通知IDを使い、種類の増加を追記する。Actions再実行・別runへの持ち越しでもIDを変えない。更新前後のcommitとrawパスを含むready受信後、追加がある分類、変更がある場合は共通の変更欄、最後にKBCリンクを送る。
 
 ## 保存と再送
 

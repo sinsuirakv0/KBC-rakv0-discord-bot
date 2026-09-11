@@ -1,5 +1,6 @@
-export const skdSourceBaseUrl = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event";
+﻿export const skdSourceBaseUrl = "https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-event";
 export const skdHttpTimeoutMs = 15_000;
+export const skdSourceTreeUrl = "https://api.github.com/repos/sinsuirakv0/KBC-rakv0-event/git/trees";
 export const skdMaxDocumentBytes = 4 * 1024 * 1024;
 export const skdDisplayLimit = 5;
 

@@ -29,14 +29,14 @@ export function isMissionId(id: number): boolean {
   );
 }
 
-function stripDisplayMarkup(value: string): string {
+function stripDisplayMarkup(value: string, lineBreak = " "): string {
   return value
-    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<br\s*\/?>/gi, lineBreak)
     .replace(/<[^>]*>/g, "")
     .trim();
 }
 
-export function getStageName(id: number, sources: StageNameSources): string {
+export function getStageName(id: number, sources: StageNameSources, options: { preserveLineBreaks?: boolean } = {}): string {
   if (isMissionId(id)) {
     const lookupId = id >= 15000 && id <= 15999 ? id - 15000 : id;
     const rawName = sources.missionNames.get(lookupId);
@@ -44,6 +44,7 @@ export function getStageName(id: number, sources: StageNameSources): string {
     const commaIndex = rawName.search(/[,，]/);
     return stripDisplayMarkup(
       commaIndex === -1 ? rawName : rawName.slice(0, commaIndex),
+      options.preserveLineBreaks ? "\n" : " ",
     );
   }
   const rawName = sources.saleNames.get(id) ?? sources.allDayEventNames.get(id);
