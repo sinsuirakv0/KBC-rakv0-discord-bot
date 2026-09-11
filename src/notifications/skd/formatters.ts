@@ -24,8 +24,12 @@ function itemLabel(entry: ItemEntry, data: ItemDisplayData): string {
   return `${entry.gift.giftType} ${getItemScheduleName(entry, data)}${entry.gift.giftAmount > 0 ? ` ×${entry.gift.giftAmount}` : ""}`;
 }
 
+function isPermanent(header: Header): boolean {
+  return header.endDate === "20300101";
+}
+
 function isVisible(header: Header, now: Date): boolean {
-  return header.endDate !== "20300101" && parseHeaderDate(header.endDate, header.endTime) > now;
+  return isPermanent(header) || parseHeaderDate(header.endDate, header.endTime) > now;
 }
 
 function formatSection(name: string, rows: Row[], now: Date): string {
@@ -36,9 +40,12 @@ function formatSection(name: string, rows: Row[], now: Date): string {
   for (const row of visible.slice(0, skdDisplayLimit)) {
     const start = parseHeaderDate(row.header.startDate, row.header.startTime);
     const active = start <= now;
-    const date = active ? parseHeaderDate(row.header.endDate, row.header.endTime) : start;
-    const key = `${active}:${active ? row.header.endDate : row.header.startDate}`;
-    const group = groups.get(key) ?? { title: active ? `🟢 [~${formatJstShort(date)}]` : `[${formatJstShort(date)}~]`, labels: [] };
+    const permanent = isPermanent(row.header);
+    const useEnd = active && !permanent;
+    const date = useEnd ? parseHeaderDate(row.header.endDate, row.header.endTime) : start;
+    const key = `${permanent}:${active}:${useEnd ? row.header.endDate : row.header.startDate}`;
+    const period = useEnd ? `[~${formatJstShort(date)}]` : `[${formatJstShort(date)}~]`;
+    const group = groups.get(key) ?? { title: `${active ? "🟢 " : ""}${period}${permanent ? " 常設" : ""}`, labels: [] };
     const label = row.label.replace(/`/g, " ").replace(/\r\n?/g, "\n");
     const lines = (name === "mission" ? label : label.replace(/\n/g, " ")).split("\n");
     group.labels.push(lines.map(line => `    ${line}`).join("\n").slice(0, 244));
@@ -68,10 +75,11 @@ function formatChanges(data: AddedScheduleData, now: Date): string {
     .filter(row => isVisible(row.after, now)).sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type));
   if (!visible.length) return "";
   const dateTime = (date: string, time: string) => `${date.slice(0, 4)}/${date.slice(4, 6)}/${date.slice(6, 8)} ${time.padStart(4, "0").slice(0, 2)}:${time.padStart(4, "0").slice(2, 4)}`;
+  const endDateTime = (header: Header) => isPermanent(header) ? "常設" : dateTime(header.endDate, header.endTime);
   const lines = visible.slice(0, skdDisplayLimit).map(({ type, label, before, after }) => {
     const details: string[] = [];
     if (before.startDate !== after.startDate || before.startTime !== after.startTime) details.push(`開始: ${dateTime(before.startDate, before.startTime)} → ${dateTime(after.startDate, after.startTime)}`);
-    if (before.endDate !== after.endDate || before.endTime !== after.endTime) details.push(`終了: ${dateTime(before.endDate, before.endTime)} → ${dateTime(after.endDate, after.endTime)}`);
+    if (before.endDate !== after.endDate || before.endTime !== after.endTime) details.push(`終了: ${endDateTime(before)} → ${endDateTime(after)}`);
     if (before.minVersion !== after.minVersion) details.push(`必要Ver: ${before.minVersion} → ${after.minVersion}`);
     if (before.maxVersion !== after.maxVersion) details.push(`上限Ver: ${before.maxVersion} → ${after.maxVersion}`);
     return `[${type}] ${label.slice(0, 120)}\n  ${details.join("\n  ")}`.replace(/`/g, " ").replace(/\r\n?/g, "\n").slice(0, 360);
@@ -89,9 +97,9 @@ export function formatAddedSchedules(data: AddedScheduleData, now: Date, history
     }
   }
   if (data.sale) for (const entry of data.sale.sale.data) {
-    const duration = formatDuration(parseHeaderDate(entry.header.startDate, entry.header.startTime), parseHeaderDate(entry.header.endDate, entry.header.endTime));
-    for (const id of getListStageIds(entry, data.sale.cardSettingStageIds)) rows.sale.push({ header: entry.header, label: `${id} ${getStageName(id, data.sale)} ${duration}` });
-    for (const id of entry.stageIds.filter(isMissionId)) rows.mission.push({ header: entry.header, label: `${id} ${getStageName(id, data.sale, { preserveLineBreaks: true })} ${duration}` });
+    const duration = isPermanent(entry.header) ? "" : ` ${formatDuration(parseHeaderDate(entry.header.startDate, entry.header.startTime), parseHeaderDate(entry.header.endDate, entry.header.endTime))}`;
+    for (const id of getListStageIds(entry, data.sale.cardSettingStageIds)) rows.sale.push({ header: entry.header, label: `${id} ${getStageName(id, data.sale)}${duration}` });
+    for (const id of entry.stageIds.filter(isMissionId)) rows.mission.push({ header: entry.header, label: `${id} ${getStageName(id, data.sale, { preserveLineBreaks: true })}${duration}` });
   }
   if (data.item) for (const entry of data.item.item.data) {
     rows.item.push({ header: entry.header, label: itemLabel(entry, data.item) });

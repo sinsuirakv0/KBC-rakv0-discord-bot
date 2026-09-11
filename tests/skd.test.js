@@ -76,6 +76,29 @@ test("four separate code blocks each show at most five rows, then the KBC link",
   assert.match(parts[4], /https:\/\/example.com\/history/);
 });
 
+test("permanent additions and changes remain visible, including the April 1 popup", () => {
+  const permanent = { ...header, startDate: "20260401", startTime: "1500", endDate: "20300101", endTime: "000", minVersion: "150300" };
+  const sale = { header: permanent, timeBlocks: [], stageIds: [114, 8001] };
+  const expired = { ...sale, header: { ...permanent, endDate: "20260331" }, stageIds: [115] };
+  const change = { ...sale, stageIds: [116] };
+  const parts = formatAddedSchedules({
+    gatya: { gacha: document([{ header: { ...permanent, gachaType: 1 }, gachas: [{ id: 1, flags: 0 }] }]),
+      seriesMappings: { R: new Map(), E: new Map(), N: new Map() }, shortSeriesNames: { R: new Map(), E: new Map(), N: new Map() } },
+    sale: { sale: document([sale, expired]), saleNames: new Map([[114, "新バージョン告知ポップアップ"]]), allDayEventNames: new Map(), missionNames: new Map([[8001, "常設ミッション"]]), cardSettingStageIds: [] },
+    item: { item: document([{ header: permanent, gift: { giftType: 2, giftAmount: 1, title: "アイテム" } }]), itemNames: new Map(), saleNames: new Map() },
+    changes: { sale: [{ before: { ...change, header: { ...permanent, endDate: "20260402" } }, after: change }] },
+  }, new Date("2026-04-01T06:07:12Z"), "https://example.com/history");
+  assert.deepEqual(parts.map(part => part.split("\n")[0]), ["**gatya**", "**sale**", "**item**", "**mission**", "**変更**", "**KBC**"]);
+  for (const part of parts.slice(0, 4)) {
+    assert.match(part, /🟢 \[4\/1\(水\) 15:00~\] 常設/);
+    assert.doesNotMatch(part, /2030|<\d+d/);
+  }
+  assert.match(parts[1], /114 新バージョン告知ポップアップ/);
+  assert.doesNotMatch(parts[1], /115 /);
+  assert.match(parts[4], /終了: 2026\/04\/02 00:00 → 常設/);
+  assert.ok(parts.every(part => part.length <= 2000));
+});
+
 test("ready notifications compare the latest previous raw TSV and reject incomplete history or mismatches", async () => {
   const before = "[start]\n20260911\t1100\t20260918\t1100\t150600\t999999\t0\t0\t1\t100\n[end]";
   const tsv = "[start]\n20260911\t1100\t20260918\t1100\t150600\t999999\t0\t0\t3\t100\t101\t8001\n[end]";
@@ -142,7 +165,7 @@ test("skd selects 100-second updates and accepts latest, slash dates and spaced 
   assert.deepEqual(calls[1].comparisons.map(pair => pair.type), ["gatya", "sale"]);
   assert.equal(calls[1].comparisons[0].before.path, file("gatya", base - 86400).path);
   assert.equal(calls[1].comparisons[0].after.path, file("gatya", base + 10).path);
-  assert.ok(replies[3].startsWith("**スケジュール更新を検知**"));
+  assert.ok(replies[3].startsWith("**スケジュール更新**"));
   assert.ok(replies[3].includes("2026/07/30"));
   assert.deepEqual(replies.slice(4, 6), ["schedule list", "KBC link"]);
   await command.execute(context, ["2026", "07", "30"]);

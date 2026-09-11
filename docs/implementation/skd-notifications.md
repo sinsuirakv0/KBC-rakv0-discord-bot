@@ -10,7 +10,7 @@ createScheduleDetailsBuilderはreadyイベントのbeforeRefのGit treeを取得
 
 各コマンドのデータ取得関数は、解析済みdocumentを任意引数で受け取る。通常コマンドは従来どおりJSONを取得し、通知側はdocumentを渡して名前・ID対応表だけを取得する。ガチャのentryLabels、saleのgetStageName / isMissionId / getListStageIds、itemのgetItemScheduleNameを再利用する。
 
-formatAddedSchedulesは追加分を開始日時順に並べ、終了済み・常設を除外し、項目単位で重複を除いて各5件を選ぶ。予定は開始日、開催中は終了日でまとめる。missionはsaleのIDから独立分類し、getStageNameのpreserveLineBreaksオプションで原文の<br>を改行へ変換する。続きの行も字下げし、複数行のmissionを1件として数える。通常のsaleコマンドは従来の表示を保つ。コードフェンスを除去し、字下げを含む各項目を244文字までに制限してDiscordの2000文字以内に収める。skdHistoryUrlは旧lib/discord.jsと同じtab=history、tsv=<最新のraw時刻>、type=allを生成する。
+formatAddedSchedulesは追加分を開始日時順に並べ、終了済みを除外し、項目単位で重複を除いて各5件を選ぶ。isVisibleは終了日20300101を常設として表示対象に含め、formatChangesにも同じ判定を使う。予定は開始日、開催中は終了日でまとめる。常設は開始日でまとめて「常設」と明記し、架空の開催日数は付けない。missionはsaleのIDから独立分類し、getStageNameのpreserveLineBreaksオプションで原文の<br>を改行へ変換する。続きの行も字下げし、複数行のmissionを1件として数える。通常のsaleコマンドは従来の表示を保つ。コードフェンスを除去し、字下げを含む各項目を244文字までに制限してDiscordの2000文字以内に収める。skdHistoryUrlは旧lib/discord.jsと同じtab=history、tsv=<最新のraw時刻>、type=allを生成する。
 
 追加がない種類は省き、formatChangesが4種類の日時・必要バージョン・上限バージョンの変更を1つのコードブロックへまとめる。表示順はgatya、sale、item、mission、上限は全体で5件。項目ごとに変更前→変更後を示す。変更項目は名前120文字・全体360文字までとし、2000文字以内に収める。変更がない場合は欄ごと省き、最後にKBCリンクを付ける。
 
@@ -41,6 +41,10 @@ KBC-rakv0-eventのlib/skd-notifications.jsがstate/skd-notifications.jsonへ通�
 ## 検証
 
 - npm test / npm run typecheck / git diff --check。
-- tests/skd.test.js: 追加・変更の判別、4分類・追加各5件・変更合計5件、空の種類の省略、missionの改行、前回rawの選択と同一パーサーでの比較、commit固定・ハッシュ不一致・履歴欠落の拒否。
+- tests/skd.test.js: 追加・変更の判別、4分類・追加各5件・変更合計5件、常設の追加・変更、空の種類の省略、missionの改行、前回rawの選択と同一パーサーでの比較、commit固定・ハッシュ不一致・履歴欠落の拒否。
 - tests/push.test.js: 再試行・再起動、送信結果不明時の停止、独立した受信処理間の送信権取得。
 - 実データのgatya_1788844575/4576、sale_1788844575/4576、item_1788844575/4576はそれぞれ同一内容。7f9677bから16e839cまでの更新を実際のTSVと名前表で解析し、4分類とKBCリンクを生成して確認した。Discordへの試験投稿はしていない。
+
+2026-09-11の表示漏れ調査: 2026/04/01のsale_1775023632.tsvは、直前のsale_1774926317.tsvに対してID 114「新バージョン告知ポップアップ」が1件追加されていた。差分解析では検出できていたが、終了日20300101を常設として除外する表示条件で消えていた。通知とo.skdの共通表示を修正し、実際の外部取得を使う`o.skd 2026 04 01`相当の実行で、見出し「スケジュール更新」、TSV保存時刻15:07:12、ID 114の表示を確認した。
+
+取得側commit 0e13fb3d4ff7c91acd59c68800f2ff271a7e0318のraw全81ファイルについて、データ行数と解析件数が一致した。100秒単位の全37更新を実データと名前表で再計算し、各返信が2000文字以内であることを確認した。初回保存分を除く22ファイル（gatya 3、sale 11、item 8）に常設の追加・変更があり、同じ除外条件の影響を受けていた。修正後も追加・変更欄が空なのは2026/04/24のみで、この回はsaleとitemのID 33000に関する行が各1行削除されただけだった。各5件と「その他〇件」の上限は維持する。

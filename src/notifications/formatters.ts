@@ -5,7 +5,7 @@ export function formatDetection(event: DetectionEvent, includeTypes = true, time
   const pad = (value: number) => String(value).padStart(2, "0");
   const timestamp = `${date.getUTCFullYear()}/${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())}`
     + `(${"日月火水木金土"[date.getUTCDay()]}) ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
-  const title = event.category === "skd" ? "**スケジュール更新を検知**"
+  const title = event.category === "skd" ? "**スケジュール更新**"
     : event.category === "ad" ? "adの更新を検知" : "popup_noticeの更新を検知";
   const lines = [title, `${timestampLabel}: ${timestamp}`];
   if (event.category === "skd" && includeTypes && event.types.length) lines.push(`種類: ${event.types.join(",")}`);

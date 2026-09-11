@@ -32,7 +32,7 @@ async function fixture() {
 }
 
 test("detection validation and JST messages follow the category contract", () => {
-  assert.equal(formatDetection(parseDetectionEvent(detected)), "**スケジュール更新を検知**\n検知時刻: 2026/09/06(日) 00:00:00");
+  assert.equal(formatDetection(parseDetectionEvent(detected)), "**スケジュール更新**\n検知時刻: 2026/09/06(日) 00:00:00");
   assert.match(formatDetection(parseDetectionEvent({ ...detected, phase: "types", types: ["sale", "gatya", "sale"] })), /種類: gatya,sale$/);
   assert.match(formatDetection({ ...detected, category: "ad" }), /^adの更新を検知/);
   assert.match(formatDetection({ ...detected, category: "notice" }), /^popup_noticeの更新を検知/);
