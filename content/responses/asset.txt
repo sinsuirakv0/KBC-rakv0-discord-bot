@@ -1,0 +1,6 @@
+﻿**KBC アセットえくすぷろーらー**
+<https://kbc-rakv0.vercel.app/pages/asset-explorer>
+**Local**
+<https://github.com/sinsuirakv0/KBC-rakv0-assets/tree/main/jp/Local>
+**server**
+<https://github.com/sinsuirakv0/KBC-rakv0-assets/tree/main/jp/server>

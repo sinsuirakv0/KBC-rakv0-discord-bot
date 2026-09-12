@@ -1,4 +1,4 @@
-﻿import responses from "./commands.json";
+﻿import { staticCommandResponses } from "./static/data-source";
 import { gatyaCommand } from "./gatya/command";
 import { createHelpCommand, withCommandHelp } from "./help/command";
 import { itemCommand } from "./item/command";
@@ -16,17 +16,22 @@ export function createStaticCommandDefinitions(
   staticResponses: StaticCommandResponses,
 ): readonly CommandDefinition[] {
   return Object.entries(staticResponses).map<CommandDefinition>(([name, response]) =>
-    withCommandHelp({
-      name,
-      guildOnly: true,
-      async execute(context): Promise<void> {
-        await context.reply(response);
+    withCommandHelp(
+      {
+        name,
+        guildOnly: true,
+        async execute(context): Promise<void> {
+          await context.reply(response);
+        },
       },
-    }),
+      { fallback: response },
+    ),
   );
 }
 
-export const staticCommandDefinitions = createStaticCommandDefinitions(responses);
+export const staticCommandDefinitions = createStaticCommandDefinitions(
+  staticCommandResponses,
+);
 export const dynamicCommandDefinitions: readonly CommandDefinition[] = [
   createHelpCommand(),
   withCommandHelp(saleCommand),

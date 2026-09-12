@@ -8,24 +8,40 @@ async function sendCommandHelp(
   context: CommandContext,
   commandName: string,
   source: CommandHelpSource,
+  fallback?: string,
 ): Promise<void> {
   try {
     await context.reply(await source.read(commandName));
   } catch (error) {
+    if (fallback !== undefined) {
+      await context.reply(fallback);
+      return;
+    }
     console.error(`Command help retrieval failed: ${commandName}`, error);
     await context.reply(HELP_ERROR_MESSAGE);
   }
 }
 
+interface CommandHelpOptions {
+  source?: CommandHelpSource;
+  fallback?: string;
+}
+
 export function withCommandHelp(
   definition: CommandDefinition,
-  source: CommandHelpSource = fileCommandHelpSource,
+  options: CommandHelpOptions = {},
 ): CommandDefinition {
+  const source = options.source ?? fileCommandHelpSource;
   return {
     ...definition,
     async execute(context, args): Promise<void> {
       if (args[0]?.toLowerCase() === "help") {
-        await sendCommandHelp(context, definition.name, source);
+        await sendCommandHelp(
+          context,
+          definition.name,
+          source,
+          options.fallback,
+        );
         return;
       }
       await definition.execute(context, args);

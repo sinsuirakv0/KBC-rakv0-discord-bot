@@ -31,3 +31,9 @@ archive/
 !tests/skd.test.js
 !docs/implementation/skd-notifications.md
 !docs/requirements/skd-notifications.md
+
+!docs/requirements/ut.md
+!docs/implementation/ut-command.md
+!docs/decisions/command-help-and-progress.md
+!docs/implementation/command-help-and-discord-output.md
+!src/commands/ut/vendor/docs/motion-engine.md

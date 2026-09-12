@@ -2,7 +2,12 @@
   CharacterAssets,
   CharacterIndex,
   CharacterUnit,
+  UnitBuy,
+  UtForm,
   UtMatchSource,
+  UtMotionAssetPlan,
+  UtMotionKind,
+  UtMotionRequest,
   UtOriginRequest,
   UtSearchMatch,
 } from "./types";
@@ -82,20 +87,112 @@ export function buildAssetPath(template: string, id: string, suffix: string): st
 
 export function resolveOriginAssetPath(
   assets: CharacterAssets,
+  unitBuy: UnitBuy,
   id: string,
   origin: UtOriginRequest,
 ): string | undefined {
-  const numericId = Number(id);
-  const unit = Number.isSafeInteger(numericId) ? assets.units[numericId] : undefined;
-  if (!unit || unit.id !== id) return undefined;
+  if (origin.family === "gacha") {
+    const numericId = Number(id);
+    const unit = Number.isSafeInteger(numericId) ? assets.units[numericId] : undefined;
+    const suffix = `_${origin.variant}.png`;
+    if (!unit || unit.id !== id || !unit.suffixes.g?.includes(suffix)) return undefined;
+    const template = assets.pathTemplates.g;
+    return template ? buildAssetPath(template, id, suffix) : undefined;
+  }
 
-  const code = origin.family === "icon" ? "un" : origin.family === "wide" ? "uu" : "g";
-  const suffix =
-    origin.family === "icon"
-      ? `_${origin.variant}00.png`
-      : `_${origin.variant}.png`;
+  const form = origin.variant as UtForm;
+  const stem = resolveUnitAssetStem(unitBuy, id, form);
+  if (!stem) return undefined;
+  const numericAssetId = Number(stem.assetId);
+  const unit = assets.units[numericAssetId];
+  if (!unit || unit.id !== stem.assetId) return undefined;
+
+  if (origin.family === "sprite") {
+    if (
+      !unit.suffixes.i?.includes(`_${stem.suffix}.imgcut`) ||
+      !unit.suffixes.i?.includes(`_${stem.suffix}.mamodel`)
+    ) {
+      return undefined;
+    }
+    return `Number/${stem.assetId}_${stem.suffix}.png`;
+  }
+
+  const code = origin.family === "icon" ? "un" : "uu";
+  const suffix = stem.shared
+    ? `_m0${form === "f" ? 0 : 1}.png`
+    : origin.family === "icon" ? `_${form}00.png` : `_${form}.png`;
   if (!unit.suffixes[code]?.includes(suffix)) return undefined;
 
   const template = assets.pathTemplates[code];
-  return template ? buildAssetPath(template, id, suffix) : undefined;
+  return template ? buildAssetPath(template, stem.assetId, suffix) : undefined;
+}
+
+interface UnitAssetStem {
+  assetId: string;
+  suffix: UtForm | "m";
+  shared: boolean;
+}
+
+export function resolveUnitAssetStem(
+  unitBuy: UnitBuy,
+  id: string,
+  form: UtForm,
+): UnitAssetStem | undefined {
+  const numericId = Number(id);
+  const entry = Number.isSafeInteger(numericId) ? unitBuy.units[numericId] : undefined;
+  if (!entry || entry.id !== id) return undefined;
+
+  const formIndex = form === "f" ? 0 : form === "c" ? 1 : undefined;
+  const sharedId = formIndex === undefined ? undefined : entry.sharedFormIds[formIndex];
+  return sharedId
+    ? { assetId: sharedId, suffix: "m", shared: true }
+    : { assetId: id, suffix: form, shared: false };
+}
+
+const MOTION_FILE_INDEX: Readonly<Record<UtMotionKind, number>> = {
+  move: 0,
+  idle: 1,
+  attack: 2,
+  knockback: 3,
+};
+
+export function resolveMotionAssetPlan(
+  assets: CharacterAssets,
+  unitBuy: UnitBuy,
+  id: string,
+  request: UtMotionRequest,
+): UtMotionAssetPlan | undefined {
+  const stem = resolveUnitAssetStem(unitBuy, id, request.form);
+  if (!stem) return undefined;
+  const unit = assets.units[Number(stem.assetId)];
+  const template = assets.pathTemplates.i;
+  if (!unit || unit.id !== stem.assetId || !template) return undefined;
+
+  const imgcutSuffix = `_${stem.suffix}.imgcut`;
+  const modelSuffix = `_${stem.suffix}.mamodel`;
+  if (
+    !unit.suffixes.i?.includes(imgcutSuffix) ||
+    !unit.suffixes.i?.includes(modelSuffix)
+  ) {
+    return undefined;
+  }
+
+  const animationPaths: Partial<Record<UtMotionKind, string>> = {};
+  for (const segment of request.segments) {
+    if (animationPaths[segment.motion]) continue;
+    const suffix = `_${stem.suffix}0${MOTION_FILE_INDEX[segment.motion]}.maanim`;
+    if (!unit.suffixes.i?.includes(suffix)) return undefined;
+    animationPaths[segment.motion] = buildAssetPath(template, stem.assetId, suffix);
+  }
+
+  return {
+    id,
+    form: request.form,
+    format: request.format,
+    segments: request.segments,
+    spritePath: `Number/${stem.assetId}_${stem.suffix}.png`,
+    imgcutPath: buildAssetPath(template, stem.assetId, imgcutSuffix),
+    modelPath: buildAssetPath(template, stem.assetId, modelSuffix),
+    animationPaths,
+  };
 }

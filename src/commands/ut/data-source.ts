@@ -6,8 +6,8 @@ import {
   utHttpTimeoutMs,
 } from "../../config/ut";
 import { isSafeRelativePath } from "./domain";
-import { parseCharacterAssets, parseCharacterIndex } from "./parsers";
-import { CharacterAssets, CharacterIndex, UtDataSource } from "./types";
+import { parseCharacterAssets, parseCharacterIndex, parseUnitBuy } from "./parsers";
+import { CharacterAssets, CharacterIndex, UnitBuy, UtDataSource } from "./types";
 
 interface CacheEntry<T> {
   value: T;
@@ -17,14 +17,14 @@ interface CacheEntry<T> {
   validatedAt: number;
 }
 
-interface CachedJsonResourceOptions<T> {
+interface CachedResourceOptions<T> {
   label: string;
   url: string;
   timeoutMs: number;
   ttlMs: number;
   fetchImpl: typeof fetch;
   now(): number;
-  parse(value: unknown): T;
+  parse(text: string): T;
 }
 
 function parseJson(text: string, label: string): unknown {
@@ -41,17 +41,11 @@ async function fetchWithTimeout(
   timeoutMs: number,
   init: RequestInit = {},
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+  return fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
-function createCachedJsonResource<T>(
-  options: CachedJsonResourceOptions<T>,
+function createCachedResource<T>(
+  options: CachedResourceOptions<T>,
 ): () => Promise<T> {
   let cache: CacheEntry<T> | undefined;
   let inFlight: Promise<T> | undefined;
@@ -96,7 +90,7 @@ function createCachedJsonResource<T>(
         return cache.value;
       }
 
-      const value = options.parse(parseJson(text, options.label));
+      const value = options.parse(text);
       cache = {
         value,
         hash,
@@ -141,46 +135,67 @@ export function createRemoteUtDataSource(
   const ttlMs = options.cacheTtlMs ?? utCacheTtlMs;
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
-  const fetchCharacterIndex = createCachedJsonResource<CharacterIndex>({
+  const fetchCharacterIndex = createCachedResource<CharacterIndex>({
     label: "character-index.json",
     url: urls.characterIndex,
     timeoutMs,
     ttlMs,
     fetchImpl,
     now,
-    parse: parseCharacterIndex,
+    parse: (text) => parseCharacterIndex(parseJson(text, "character-index.json")),
   });
-  const fetchCharacterAssets = createCachedJsonResource<CharacterAssets>({
+  const fetchCharacterAssets = createCachedResource<CharacterAssets>({
     label: "character-assets.json",
     url: urls.characterAssets,
     timeoutMs,
     ttlMs,
     fetchImpl,
     now,
-    parse: parseCharacterAssets,
+    parse: (text) => parseCharacterAssets(parseJson(text, "character-assets.json")),
   });
+  const fetchUnitBuy = createCachedResource<UnitBuy>({
+    label: "unitbuy.csv",
+    url: urls.unitBuy,
+    timeoutMs,
+    ttlMs,
+    fetchImpl,
+    now,
+    parse: parseUnitBuy,
+  });
+
+  const fetchAsset = async (relativePath: string): Promise<Uint8Array> => {
+    if (
+      !isSafeRelativePath(relativePath) ||
+      !/\.(?:png|imgcut|mamodel|maanim)$/i.test(relativePath)
+    ) {
+      throw new Error("Unsafe character asset path");
+    }
+    const encodedPath = relativePath
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+    const response = await fetchWithTimeout(
+      fetchImpl,
+      `${urls.siteDataBase.replace(/\/$/, "")}/${encodedPath}`,
+      timeoutMs,
+    );
+    if (!response.ok) {
+      throw new Error(`Character asset request failed with HTTP ${response.status}`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  };
 
   return {
     fetchCharacterIndex,
     fetchCharacterAssets,
+    fetchUnitBuy,
+    fetchAsset,
     async fetchPng(relativePath) {
       if (!isSafeRelativePath(relativePath) || !relativePath.endsWith(".png")) {
         throw new Error("Unsafe character PNG path");
       }
-      const encodedPath = relativePath
-        .split("/")
-        .map((segment) => encodeURIComponent(segment))
-        .join("/");
-      const response = await fetchWithTimeout(
-        fetchImpl,
-        `${urls.siteDataBase.replace(/\/$/, "")}/${encodedPath}`,
-        timeoutMs,
-      );
-      if (!response.ok) {
-        throw new Error(`Character PNG request failed with HTTP ${response.status}`);
-      }
       return {
-        data: new Uint8Array(await response.arrayBuffer()),
+        data: await fetchAsset(relativePath),
         filename: relativePath.split("/").at(-1) ?? "origin.png",
       };
     },

@@ -5,7 +5,11 @@
 } from "../../config/ut";
 import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../types";
 import { remoteUtDataSource } from "./data-source";
-import { resolveOriginAssetPath, searchCharacterIndex } from "./domain";
+import {
+  resolveMotionAssetPlan,
+  resolveOriginAssetPath,
+  searchCharacterIndex,
+} from "./domain";
 import {
   formatDetailResult,
   formatMatchLabel,
@@ -16,18 +20,34 @@ import {
   PREVIOUS_PAGE_EMOJI,
 } from "./formatters";
 import { parseUtRequest } from "./parsers";
-import { UtDataSource, UtOriginRequest, UtSearchMatch } from "./types";
+import { utMotionRenderer } from "./motion-renderer";
+import { createUtMotionProgress } from "./motion-progress";
+import {
+  UnitBuy,
+  UtDataSource,
+  UtMotionRenderer,
+  UtMotionRequest,
+  UtOriginRequest,
+  UtSearchMatch,
+} from "./types";
 
 const NOT_FOUND_MESSAGE = "該当する味方キャラが見つかりませんでした。";
 const INVALID_ORIGIN_MESSAGE =
   "originの指定が正しくありません。o.ut help で使い方を確認してください。";
+const INVALID_MOTION_MESSAGE =
+  "motionの指定が正しくありません。o.ut help で使い方を確認してください。";
 const MISSING_IMAGE_MESSAGE = "指定した画像はこのキャラには存在しません。";
+const MISSING_MOTION_MESSAGE = "指定したモーションはこのキャラには存在しません。";
+const INVALID_FRAME_MESSAGE = "指定したフレームはこのモーションには存在しません。";
 const DATA_ERROR_MESSAGE =
   "味方キャラデータの取得に失敗しました。しばらくしてからもう一度お試しください。";
+const RENDER_ERROR_MESSAGE =
+  "モーションの生成に失敗しました。しばらくしてからもう一度お試しください。";
 const LIST_FOOTER = "詳細は o.ut <ID> で表示できます。";
 
 export interface UtCommandDependencies {
   dataSource: UtDataSource;
+  motionRenderer?: UtMotionRenderer;
   reactionTimeoutMs?: number;
   pageSize?: number;
 }
@@ -47,12 +67,17 @@ async function sendOriginImage(
   dataSource: UtDataSource,
   output: InteractiveCommandOutput,
 ): Promise<void> {
-  const assets = await loadData(() => dataSource.fetchCharacterAssets());
-  if (!assets) {
+  const [assets, unitBuy] = await Promise.all([
+    loadData(() => dataSource.fetchCharacterAssets()),
+    origin.family === "gacha"
+      ? Promise.resolve<UnitBuy>({ units: [] })
+      : loadData(() => dataSource.fetchUnitBuy()),
+  ]);
+  if (!assets || !unitBuy) {
     await output.send(DATA_ERROR_MESSAGE);
     return;
   }
-  const relativePath = resolveOriginAssetPath(assets, match.unit.id, origin);
+  const relativePath = resolveOriginAssetPath(assets, unitBuy, match.unit.id, origin);
   if (!relativePath) {
     await output.send(MISSING_IMAGE_MESSAGE);
     return;
@@ -63,6 +88,48 @@ async function sendOriginImage(
     return;
   }
   await output.sendAttachment(attachment);
+}
+
+async function sendMotion(
+  match: UtSearchMatch,
+  request: UtMotionRequest,
+  dataSource: UtDataSource,
+  renderer: UtMotionRenderer,
+  output: InteractiveCommandOutput,
+): Promise<void> {
+  const message = await output.send("モーションのデータを確認しています…");
+  const progress = createUtMotionProgress(message);
+  const [assets, unitBuy] = await Promise.all([
+    loadData(() => dataSource.fetchCharacterAssets()),
+    loadData(() => dataSource.fetchUnitBuy()),
+  ]);
+  if (!assets || !unitBuy) {
+    await progress.finish(DATA_ERROR_MESSAGE);
+    return;
+  }
+  const plan = resolveMotionAssetPlan(assets, unitBuy, match.unit.id, request);
+  if (!plan) {
+    await progress.finish(MISSING_MOTION_MESSAGE);
+    return;
+  }
+
+  try {
+    const attachment = await renderer.render(
+      plan,
+      (relativePath) => dataSource.fetchAsset(relativePath),
+      progress.update,
+    );
+    if (!attachment) {
+      await progress.finish(INVALID_FRAME_MESSAGE);
+      return;
+    }
+    await progress.update({ stage: "sending" });
+    await output.sendAttachment(attachment);
+    await progress.finish("モーションの生成・送信が完了しました。");
+  } catch (error) {
+    console.error("Ut motion rendering failed.", error);
+    await progress.finish(RENDER_ERROR_MESSAGE);
+  }
 }
 
 async function selectMatch(
@@ -172,6 +239,7 @@ async function sendListResults(
 export function createUtCommand(dependencies: UtCommandDependencies): CommandDefinition {
   const timeoutMs = dependencies.reactionTimeoutMs ?? utReactionTimeoutMs;
   const pageSize = dependencies.pageSize ?? utPageSize;
+  const motionRenderer = dependencies.motionRenderer ?? utMotionRenderer;
   return {
     name: "ut",
     guildOnly: true,
@@ -191,6 +259,10 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         await output.send(INVALID_ORIGIN_MESSAGE);
         return;
       }
+      if (request.kind === "invalid-motion") {
+        await output.send(INVALID_MOTION_MESSAGE);
+        return;
+      }
 
       const index = await loadData(() => dependencies.dataSource.fetchCharacterIndex());
       if (!index) {
@@ -203,19 +275,27 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         return;
       }
 
-      if (request.origin) {
+      if (request.origin || request.motion) {
+        let selected: UtSearchMatch | undefined;
         if (matches.length === 1) {
-          await sendOriginImage(matches[0], request.origin, dependencies.dataSource, output);
-          return;
+          selected = matches[0];
+        } else if (matches.length <= NUMBER_EMOJIS.length) {
+          selected = await selectMatch(matches, request.query, output, timeoutMs);
+        } else {
+          await sendListResults(matches, request.query, output, timeoutMs, pageSize);
         }
-        if (matches.length <= NUMBER_EMOJIS.length) {
-          const selected = await selectMatch(matches, request.query, output, timeoutMs);
-          if (selected) {
-            await sendOriginImage(selected, request.origin, dependencies.dataSource, output);
-          }
-          return;
+        if (selected && request.origin) {
+          await sendOriginImage(selected, request.origin, dependencies.dataSource, output);
         }
-        await sendListResults(matches, request.query, output, timeoutMs, pageSize);
+        if (selected && request.motion) {
+          await sendMotion(
+            selected,
+            request.motion,
+            dependencies.dataSource,
+            motionRenderer,
+            output,
+          );
+        }
         return;
       }
 

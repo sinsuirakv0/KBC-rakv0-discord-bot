@@ -1,5 +1,6 @@
 ﻿const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
@@ -12,7 +13,10 @@ const {
   createStaticCommandDefinitions,
   staticCommandDefinitions,
 } = require("../dist/commands/registry");
-const staticResponses = require("../src/commands/commands.json");
+const {
+  loadStaticCommandResponses,
+  staticCommandResponses: staticResponses,
+} = require("../dist/commands/static/data-source");
 
 test("command input parser preserves the legacy prefix and lowercases names", () => {
   assert.deepEqual(parseCommandInput("o.PING one two", "o."), {
@@ -23,7 +27,7 @@ test("command input parser preserves the legacy prefix and lowercases names", ()
   assert.equal(parseCommandInput("o.   ", "o."), undefined);
 });
 
-test("registry derives every static command from commands.json", () => {
+test("registry derives every static command from response text files", () => {
   assert.equal(commandRegistry.resolve("PING")?.name, "ping");
   assert.equal(commandRegistry.resolve("sale")?.name, "sale");
   assert.equal(commandRegistry.resolve("gatya")?.name, "gatya");
@@ -44,10 +48,15 @@ test("registry derives every static command from commands.json", () => {
   );
 });
 
-test("all registered commands read editable BOM-prefixed help files", async () => {
-  const commandNames = [...Object.keys(staticResponses), "sale", "gatya", "item", "st", "tut", "ut", "push", "skd"];
-  for (const commandName of ["index", ...commandNames]) {
-    const bytes = fs.readFileSync(path.join("content", "help", `${commandName}.txt`));
+test("editable command text files are BOM-prefixed but replies exclude it", async () => {
+  const helpDirectory = path.join("content", "help");
+  const helpFiles = fs.readdirSync(helpDirectory).filter((name) => name.endsWith(".txt"));
+  for (const file of helpFiles) {
+    const bytes = fs.readFileSync(path.join(helpDirectory, file));
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  }
+  for (const commandName of Object.keys(staticResponses)) {
+    const bytes = fs.readFileSync(path.join("content", "responses", `${commandName}.txt`));
     assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
   }
 
@@ -63,28 +72,37 @@ test("all registered commands read editable BOM-prefixed help files", async () =
   assert.doesNotMatch(replies.join("\n"), /\uFEFF/);
 });
 
-test("adding one response entry is enough to create a static command", async () => {
-  const definitions = createStaticCommandDefinitions({
-    ...staticResponses,
-    added: "new response",
-  });
-  const registry = createCommandRegistry(definitions);
-  const replies = [];
-
-  assert.equal(
-    await dispatchCommand(
-      { name: "added", args: ["ignored"] },
-      registry,
-      {
-        inGuild: true,
-        async reply(content) {
-          replies.push(content);
-        },
+test("adding one text file is enough to create a static command", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "static-command-"));
+  try {
+    fs.writeFileSync(
+      path.join(directory, "only_in_temp.txt"),
+      "\uFEFFfirst line\r\n\r\nlast line\r\n",
+    );
+    const definitions = createStaticCommandDefinitions(
+      loadStaticCommandResponses(directory),
+    );
+    const registry = createCommandRegistry(definitions);
+    const replies = [];
+    const context = {
+      inGuild: true,
+      async reply(content) {
+        replies.push(content);
       },
-    ),
-    true,
-  );
-  assert.deepEqual(replies, ["new response"]);
+    };
+    for (const args of [["ignored"], ["help"]]) {
+      assert.equal(
+        await dispatchCommand({ name: "only_in_temp", args }, registry, context),
+        true,
+      );
+    }
+    assert.deepEqual(replies, [
+      "first line\n\nlast line",
+      "first line\n\nlast line",
+    ]);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("registry rejects duplicate names and aliases", () => {
