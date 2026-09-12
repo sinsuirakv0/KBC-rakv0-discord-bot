@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { parentPort, workerData } from "node:worker_threads";
 import { loadImage } from "@napi-rs/canvas";
-import { utMotionVideoMaxPixels } from "../../config/ut";
+import { utMotionPngPixelRatio, utMotionVideoMaxPixels } from "../../config/ut";
 import { createMotionCanvas, createVisibleCutBounds } from "./motion-canvas";
 import { createMotionLayout } from "./motion-layout";
 import { createMotionPaletteSample } from "./motion-palette";
@@ -45,7 +45,9 @@ async function render(): Promise<void> {
     return;
   }
   const totalFrames = segments.reduce((total, segment) => total + segment.end - segment.start + 1, 0);
-  const layout = createMotionLayout(createVisibleCutBounds(image, project.imgcut.cuts), image);
+  const referencePackets = [...new Set(segments.map(segment => segment.motion))]
+    .flatMap(motion => buildNativeDrawPackets(project, motion, 0).packets);
+  const layout = createMotionLayout(createVisibleCutBounds(image, project.imgcut.cuts), referencePackets);
   let measuredFrames = 0;
   let lastProgressTime = 0;
   const report = (stage: "measuring" | "rendering", completedFrames: number) => {
@@ -63,7 +65,11 @@ async function render(): Promise<void> {
   }
   const previewScale = plan.id === "000" && plan.form === "f" ? 2.25
     : plan.id === "009" && plan.form === "f" ? 0.82 : 1;
-  const view = layout.finish(previewScale * 0.5, plan.format === "png" ? undefined : utMotionVideoMaxPixels);
+  const view = layout.finish(previewScale * 0.5, {
+    maxPixels: plan.format === "png" ? undefined : utMotionVideoMaxPixels,
+    pixelRatio: plan.format === "png" ? utMotionPngPixelRatio : 1,
+    full: plan.full,
+  });
   const { canvas, draw } = createMotionCanvas(image, view.width, view.height);
   const palette = plan.format === "gif" ? await createMotionPaletteSample(image, totalFrames, (index, scale) => {
     for (const segment of segments) {

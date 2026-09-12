@@ -65,6 +65,7 @@ export interface UtMotionSegment {
 export interface UtMotionRequest {
   format: UtMotionFormat;
   form: UtForm;
+  full: boolean;
   segments: readonly UtMotionSegment[];
 }
 
@@ -72,6 +73,7 @@ export interface UtMotionAssetPlan {
   id: string;
   form: UtForm;
   format: UtMotionFormat;
+  full: boolean;
   segments: readonly UtMotionSegment[];
   spritePath: string;
   imgcutPath: string;

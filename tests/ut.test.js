@@ -141,6 +141,7 @@ test("ut parses origin forms and searches ID, normalized forms, raw forms, and a
     motion: {
       format: "png",
       form: "s",
+      full: false,
       segments: [{ motion: "attack", frame: 15 }],
     },
   });
@@ -151,6 +152,7 @@ test("ut parses origin forms and searches ID, normalized forms, raw forms, and a
     motion: {
       format: "gif",
       form: "f",
+      full: false,
       segments: [
         { motion: "move", range: { start: 1, end: 15 } },
         { motion: "idle", range: { start: 1, end: 30 } },
@@ -161,6 +163,17 @@ test("ut parses origin forms and searches ID, normalized forms, raw forms, and a
   assert.deepEqual(parseUtRequest(["ネコ", "motion", "png", "a", "1~~2"]), {
     kind: "invalid-motion",
   });
+  for (const format of ["png", "mp4", "gif"]) {
+    for (const args of [["--full", "c", "a"], ["c", "a", "--FULL"]]) {
+      const request = parseUtRequest(["ネコ", "-f", "motion", format, ...args]);
+      assert.equal(request.force, true);
+      assert.equal(request.motion.full, true);
+      assert.equal(request.motion.form, "c");
+    }
+  }
+  for (const args of [["a", "--full", "--full"], ["a", "--all"], ["--full"], ["a", "1~~2", "--full"]]) {
+    assert.deepEqual(parseUtRequest(["ネコ", "motion", "png", ...args]), { kind: "invalid-motion" });
+  }
 
   const index = {
     units: [
@@ -307,6 +320,7 @@ test("ut resolves shared egg assets for origin and motion", () => {
     resolveMotionAssetPlan(assets, unitBuy, "656", {
       format: "mp4",
       form: "f",
+      full: true,
       segments: [
         { motion: "move", range: { start: 1, end: 15 } },
         { motion: "attack" },
@@ -316,6 +330,7 @@ test("ut resolves shared egg assets for origin and motion", () => {
       id: "656",
       form: "f",
       format: "mp4",
+      full: true,
       segments: [
         { motion: "move", range: { start: 1, end: 15 } },
         { motion: "attack" },
@@ -459,10 +474,11 @@ test("ut motion resolves assets and sends the renderer output", async () => {
   });
   await command.execute(
     commandContext(output),
-    ["ネコ", "motion", "mp4", "w", "1", "2", "a"],
+    ["ネコ", "motion", "mp4", "w", "1", "2", "a", "--full"],
   );
 
   assert.equal(plans.length, 1);
+  assert.equal(plans[0].full, true);
   assert.deepEqual(plans[0].animationPaths, {
     move: "ImageData/000_f00.maanim",
     attack: "ImageData/000_f02.maanim",
@@ -523,7 +539,7 @@ async function motionFixture() {
   };
   return {
     plan: {
-      id: "001", form: "f", format: "png", segments: [{ motion: "move", frame: 0 }],
+      id: "001", form: "f", format: "png", full: false, segments: [{ motion: "move", frame: 0 }],
       spritePath: "sprite.png", imgcutPath: "model.imgcut", modelPath: "model.mamodel",
       animationPaths: { move: "move.maanim", attack: "attack.maanim" },
     },
@@ -539,10 +555,10 @@ test("ut worker writes PNG/MP4/GIF with inclusive segments in order and preserve
   const renderer = createUtMotionRenderer();
   const png = await renderer.render(plan, fetchAsset);
   const image = await loadImage(Buffer.from(png.data));
-  assert.deepEqual([image.width, image.height], [32, 32]);
+  assert.deepEqual([image.width, image.height], [128, 128]);
   const decoded = createCanvas(image.width, image.height);
   decoded.getContext("2d").drawImage(image, 0, 0);
-  const pixelOffset = (16 * image.width + 16) * 4;
+  const pixelOffset = (64 * image.width + 64) * 4;
   assert.deepEqual([...decoded.data().subarray(pixelOffset, pixelOffset + 3)], [255, 0, 0]);
 
   const segments = [
@@ -556,10 +572,10 @@ test("ut worker writes PNG/MP4/GIF with inclusive segments in order and preserve
       "-v", "error", "-threads", "1", "-i", "pipe:0", "-fps_mode", "passthrough",
       "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
     ], { input: result.data, windowsHide: true, maxBuffer: 6 * 1024 * 1024, timeout: 10_000 });
-    const frameSize = image.width * image.height * 4;
+    const frameSize = 32 * 32 * 4;
     assert.equal(frames.length, frameSize * 4);
     assert.deepEqual([0, 1, 2, 3].map((index) => {
-      const offset = index * frameSize + pixelOffset;
+      const offset = index * frameSize + (16 * 32 + 16) * 4;
       return frames[offset] > frames[offset + 1] ? "red" : "green";
     }), ["red", "green", "red", "red"]);
   }
@@ -619,7 +635,7 @@ test("ut renderer defers queued loading, releases failures, and never starts an 
   assert.ok(await renderer.render(plan, fetchAsset));
 });
 
-test("ut layout fits all ordinary frames, crops extreme parts, and ignores transparent margins", async () => {
+test("ut layout limits long and distant effects, supports full framing and 4x PNG, and ignores transparent margins", async () => {
   const { createMotionLayout } = require("../dist/commands/ut/motion-layout");
   const { createVisibleCutBounds } = require("../dist/commands/ut/motion-canvas");
   const { createCanvas, loadImage } = require("@napi-rs/canvas");
@@ -631,12 +647,15 @@ test("ut layout fits all ordinary frames, crops extreme parts, and ignores trans
     packet(1, [-70, -120, -100, -90, 0, 10, 30, -20]),
     packet(0, [100, -200, 100, -100, 200, -100, 200, -200]),
   ];
-  const layout = createMotionLayout(() => whole, { width: 1, height: 1 });
+  const layout = createMotionLayout(() => whole, normal);
   normal.forEach(value => layout.add([value]));
   layout.add([packet(2, [0, -10000, 0, 0, 10, 0, 10, -10000])]);
+  layout.add([packet(3, [10000, -20, 10000, 0, 10020, 0, 10020, -20])]);
+  const sideEffect = packet(4, [400, -80, 400, 0, 480, 0, 480, -80]);
+  layout.add([sideEffect, packet(5, [0, -500, 0, -400, 80, -400, 80, -500])]);
   const view = layout.finish(1);
-  assert.deepEqual(view.clippedParts, [2]);
-  for (const { positions } of normal) {
+  assert.deepEqual(view.clippedParts, [2, 3, 5]);
+  for (const { positions } of [...normal, sideEffect]) {
     for (let index = 0; index < positions.length; index += 2) {
       const x = positions[index] * view.scale + view.originX;
       const y = positions[index + 1] * view.scale + view.originY;
@@ -645,19 +664,35 @@ test("ut layout fits all ordinary frames, crops extreme parts, and ignores trans
     }
   }
   assert.ok(-10000 * view.scale + view.originY < 0);
-  const giant = createMotionLayout(() => whole, { width: 1, height: 1 });
+  const full = layout.finish(1, { full: true });
+  assert.deepEqual(full.clippedParts, []);
+  assert.ok(-10000 * full.scale + full.originY >= utMotionPadding);
+  assert.ok(10020 * full.scale + full.originX <= full.width - utMotionPadding);
+  assert.ok(view.scale > full.scale * 4);
+  const highResolution = layout.finish(1, { pixelRatio: 4 });
+  for (const key of ["width", "height", "scale", "originX", "originY"]) {
+    assert.equal(highResolution[key], view[key] * 4);
+  }
+  const giant = createMotionLayout(() => whole);
   giant.add([packet(0, [0, -10000, 0, 0, 20000, 0, 20000, -10000])]);
   const capped = giant.finish(1);
   assert.deepEqual(capped.clippedParts, []);
   assert.ok(capped.width * capped.height <= utMotionMaxPixels);
   assert.ok(Math.max(capped.width, capped.height) <= utMotionMaxDimension);
   assert.equal(capped.width % 2 + capped.height % 2, 0);
-  const largeBody = createMotionLayout(() => whole, { width: 1000, height: 1000 });
-  largeBody.add([packet(0, [0, -1000, 0, 0, 1000, 0, 1000, -1000])]);
+  const fullPng = giant.finish(1, { full: true, pixelRatio: 4 });
+  assert.ok(fullPng.width * fullPng.height <= utMotionMaxPixels * 16);
+  assert.ok(Math.max(fullPng.width, fullPng.height) <= utMotionMaxDimension * 4);
+  const body = packet(0, [0, -1000, 0, 0, 1000, 0, 1000, -1000]);
+  const largeBody = createMotionLayout(() => whole, [body]);
+  largeBody.add([body]);
   for (let index = 1; index <= 10; index += 1) {
     largeBody.add([{ ...packet(index, [0, -10, 0, 0, 10, 0, 10, -10]), uvs: [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0] }]);
   }
   assert.deepEqual(largeBody.finish(1).clippedParts, []);
+  const shifted = createMotionLayout(() => whole, normal);
+  shifted.add([packet(0, [10000, -20, 10000, 0, 10020, 0, 10020, -20])]);
+  assert.deepEqual(shifted.finish(1), shifted.finish(1, { full: true }));
 
   const sprite = createCanvas(32, 32);
   sprite.getContext("2d").fillRect(8, 4, 16, 20);

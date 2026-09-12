@@ -189,6 +189,7 @@ export function resolveMotionAssetPlan(
     id,
     form: request.form,
     format: request.format,
+    full: request.full,
     segments: request.segments,
     spritePath: `Number/${stem.assetId}_${stem.suffix}.png`,
     imgcutPath: buildAssetPath(template, stem.assetId, imgcutSuffix),

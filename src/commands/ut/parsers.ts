@@ -77,9 +77,13 @@ function parseCompactRange(value: string): { start: number; end: number } | unde
 }
 
 function parseMotionArguments(args: readonly string[]): UtMotionRequest | undefined {
-  const normalized = args.map((value) => value.toLowerCase());
-  const format = normalized[0];
+  const tokens = args.map((value) => value.toLowerCase());
+  const format = tokens[0];
   if (format !== "png" && format !== "mp4" && format !== "gif") return undefined;
+  const fullFlags = tokens.filter((value) => value === "--full");
+  if (fullFlags.length > 1) return undefined;
+  const full = fullFlags.length === 1;
+  const normalized = tokens.filter((value) => value !== "--full");
 
   let cursor = 1;
   let form: UtForm = "f";
@@ -95,7 +99,7 @@ function parseMotionArguments(args: readonly string[]): UtMotionRequest | undefi
     const frame = rawFrame === undefined ? 0 : parseNonNegativeInteger(rawFrame);
     return frame === undefined
       ? undefined
-      : { format, form, segments: [{ motion, frame }] };
+      : { format, form, full, segments: [{ motion, frame }] };
   }
 
   const segments: UtMotionSegment[] = [];
@@ -123,7 +127,7 @@ function parseMotionArguments(args: readonly string[]): UtMotionRequest | undefi
     cursor += 2;
   }
 
-  return segments.length > 0 ? { format, form, segments } : undefined;
+  return segments.length > 0 ? { format, form, full, segments } : undefined;
 }
 
 export function parseUtRequest(args: readonly string[]): UtRequest {
