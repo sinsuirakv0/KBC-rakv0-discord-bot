@@ -1,4 +1,4 @@
-﻿```o.sale
+```o.sale
 開催中・開催予定のスケジュールを表示します。
 
 o.sale <ID>
@@ -8,9 +8,9 @@ missionはIDのみで検索できます。
 o.sale <名前>
 saleに含まれるイベントを検索します。
 
-o.sale <ID> j
+o.sale <ID> j(json)
 整形済みJSONを表示します。
 
-o.sale <ID> r
+o.sale <ID> r(raw)
 生データを表示します。
 ```

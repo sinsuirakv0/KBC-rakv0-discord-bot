@@ -539,10 +539,10 @@ test("ut worker writes PNG/MP4/GIF with inclusive segments in order and preserve
   const renderer = createUtMotionRenderer();
   const png = await renderer.render(plan, fetchAsset);
   const image = await loadImage(Buffer.from(png.data));
-  assert.deepEqual([image.width, image.height], [640, 480]);
-  const decoded = createCanvas(640, 480);
+  assert.deepEqual([image.width, image.height], [32, 32]);
+  const decoded = createCanvas(image.width, image.height);
   decoded.getContext("2d").drawImage(image, 0, 0);
-  const pixelOffset = (378 * 640 + 324) * 4;
+  const pixelOffset = (16 * image.width + 16) * 4;
   assert.deepEqual([...decoded.data().subarray(pixelOffset, pixelOffset + 3)], [255, 0, 0]);
 
   const segments = [
@@ -556,7 +556,7 @@ test("ut worker writes PNG/MP4/GIF with inclusive segments in order and preserve
       "-v", "error", "-threads", "1", "-i", "pipe:0", "-fps_mode", "passthrough",
       "-f", "rawvideo", "-pix_fmt", "rgba", "pipe:1",
     ], { input: result.data, windowsHide: true, maxBuffer: 6 * 1024 * 1024, timeout: 10_000 });
-    const frameSize = 640 * 480 * 4;
+    const frameSize = image.width * image.height * 4;
     assert.equal(frames.length, frameSize * 4);
     assert.deepEqual([0, 1, 2, 3].map((index) => {
       const offset = index * frameSize + pixelOffset;
@@ -565,16 +565,16 @@ test("ut worker writes PNG/MP4/GIF with inclusive segments in order and preserve
   }
 
   const sprite = await loadImage(Buffer.from(await fetchAsset(plan.spritePath)));
-  const { canvas, draw } = createMotionCanvas(sprite);
+  const { canvas, draw } = createMotionCanvas(sprite, 32, 32);
   const expectedColors = [[146, 21, 25], [165, 42, 50], [19, 0, 0], [146, 42, 50]];
   for (let blendMode = 0; blendMode < 4; blendMode += 1) {
-    draw([{ positions: [0, 0, 0, 32, 32, 32, 32, 0], uvs: [0, 0, 0, 1, 0.5, 1, 0.5, 0], opacity: 0.5, blendMode }]);
-    const color = [...canvas.data().subarray((16 * 640 + 16) * 4, (16 * 640 + 16) * 4 + 3)];
+    draw([{ partIndex: 0, positions: [0, 0, 0, 32, 32, 32, 32, 0], uvs: [0, 0, 0, 1, 0.5, 1, 0.5, 0], opacity: 0.5, blendMode }]);
+    const color = [...canvas.data().subarray((16 * 32 + 16) * 4, (16 * 32 + 16) * 4 + 3)];
     assert.ok(color.every((value, index) => Math.abs(value - expectedColors[blendMode][index]) <= 1), `${blendMode}: ${color}`);
   }
 });
 
-test("ut renderer defers queued asset loading and releases the queue after failure or an invalid range", async () => {
+test("ut renderer defers queued loading, releases failures, and never starts an encoder after cancellation", async (t) => {
   const { plan, fetchAsset } = await motionFixture();
   const renderer = createUtMotionRenderer();
   let rejectFetch;
@@ -595,6 +595,99 @@ test("ut renderer defers queued asset loading and releases the queue after failu
   const invalid = await renderer.render({ ...plan, segments: [{ motion: "move", frame: 2 }] }, fetchAsset);
   assert.equal(invalid, undefined);
   assert.ok(await renderer.render(plan, fetchAsset));
+  await assert.rejects(createUtMotionRenderer({ timeoutMs: 1 }).render(plan, fetchAsset), /timed out/);
+  const timeouts = require("../dist/commands/ut/motion-timeout");
+  const files = require("node:fs/promises");
+  const writeFile = files.writeFile;
+  let cancelWrite;
+  let encoderStarts = 0;
+  t.mock.method(timeouts, "createMotionWatchdog", () => ({
+    expired: new Promise((_, reject) => { cancelWrite = () => reject(new timeouts.UtMotionTimeoutError("total")); }),
+    touch() {}, dispose() {},
+  }));
+  t.mock.method(files, "writeFile", async (...args) => {
+    cancelWrite();
+    await writeFile(...args);
+  });
+  t.mock.method(require("node:child_process"), "spawn", () => {
+    encoderStarts += 1;
+    throw new Error("Encoder started after cancellation");
+  });
+  await assert.rejects(renderer.render({ ...plan, format: "gif" }, fetchAsset), /timed out/);
+  assert.equal(encoderStarts, 0);
+  t.mock.restoreAll();
+  assert.ok(await renderer.render(plan, fetchAsset));
+});
+
+test("ut layout fits all ordinary frames, crops extreme parts, and ignores transparent margins", async () => {
+  const { createMotionLayout } = require("../dist/commands/ut/motion-layout");
+  const { createVisibleCutBounds } = require("../dist/commands/ut/motion-canvas");
+  const { createCanvas, loadImage } = require("@napi-rs/canvas");
+  const { utMotionMaxPixels, utMotionMaxDimension, utMotionPadding } = require("../dist/config/ut");
+  const whole = { left: 0, top: 0, right: 1, bottom: 1 };
+  const packet = (partIndex, positions) => ({ partIndex, positions, opacity: 1, blendMode: 0, uvs: [0, 0, 0, 1, 1, 1, 1, 0] });
+  const normal = [
+    packet(0, [-50, -100, -50, 0, 50, 0, 50, -100]),
+    packet(1, [-70, -120, -100, -90, 0, 10, 30, -20]),
+    packet(0, [100, -200, 100, -100, 200, -100, 200, -200]),
+  ];
+  const layout = createMotionLayout(() => whole, { width: 1, height: 1 });
+  normal.forEach(value => layout.add([value]));
+  layout.add([packet(2, [0, -10000, 0, 0, 10, 0, 10, -10000])]);
+  const view = layout.finish(1);
+  assert.deepEqual(view.clippedParts, [2]);
+  for (const { positions } of normal) {
+    for (let index = 0; index < positions.length; index += 2) {
+      const x = positions[index] * view.scale + view.originX;
+      const y = positions[index + 1] * view.scale + view.originY;
+      assert.ok(x >= utMotionPadding && x <= view.width - utMotionPadding);
+      assert.ok(y >= utMotionPadding && y <= view.height - utMotionPadding);
+    }
+  }
+  assert.ok(-10000 * view.scale + view.originY < 0);
+  const giant = createMotionLayout(() => whole, { width: 1, height: 1 });
+  giant.add([packet(0, [0, -10000, 0, 0, 20000, 0, 20000, -10000])]);
+  const capped = giant.finish(1);
+  assert.deepEqual(capped.clippedParts, []);
+  assert.ok(capped.width * capped.height <= utMotionMaxPixels);
+  assert.ok(Math.max(capped.width, capped.height) <= utMotionMaxDimension);
+  assert.equal(capped.width % 2 + capped.height % 2, 0);
+  const largeBody = createMotionLayout(() => whole, { width: 1000, height: 1000 });
+  largeBody.add([packet(0, [0, -1000, 0, 0, 1000, 0, 1000, -1000])]);
+  for (let index = 1; index <= 10; index += 1) {
+    largeBody.add([{ ...packet(index, [0, -10, 0, 0, 10, 0, 10, -10]), uvs: [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0] }]);
+  }
+  assert.deepEqual(largeBody.finish(1).clippedParts, []);
+
+  const sprite = createCanvas(32, 32);
+  sprite.getContext("2d").fillRect(8, 4, 16, 20);
+  const visible = createVisibleCutBounds(await loadImage(await sprite.encode("png")), [{ x: 0, y: 0, width: 32, height: 32 }]);
+  assert.deepEqual(visible(packet(0, [])), { left: 0.25, top: 0.125, right: 0.75, bottom: 0.75 });
+  assert.equal(visible({ ...packet(0, []), blendMode: 1 }), undefined);
+  assert.deepEqual(visible({ ...packet(0, []), blendMode: 2 }), whole);
+});
+
+test("ut watchdog renews only its idle deadline and still enforces the total limit", async (t) => {
+  const { createMotionWatchdog } = require("../dist/commands/ut/motion-timeout");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const watchdog = createMotionWatchdog(1000, 100);
+  let expired = false;
+  const completion = watchdog.expired.catch(error => { expired = true; return error.message; });
+  t.mock.timers.tick(90);
+  watchdog.touch();
+  t.mock.timers.tick(90);
+  await Promise.resolve();
+  assert.equal(expired, false);
+  t.mock.timers.tick(10);
+  assert.match(await completion, /stalled/);
+  watchdog.dispose();
+  const limited = createMotionWatchdog(100, 90);
+  const total = assert.rejects(limited.expired, /total/);
+  t.mock.timers.tick(80);
+  limited.touch();
+  t.mock.timers.tick(20);
+  await total;
+  limited.dispose();
 });
 
 test("ut caches JSON for ten minutes, revalidates conditionally, updates content, and falls back stale", async () => {

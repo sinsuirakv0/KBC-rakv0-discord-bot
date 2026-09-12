@@ -8,10 +8,12 @@ function formatProgress(progress: UtMotionProgress): string {
     case "loading": return "モーションのデータを取得しています…";
     case "encoding": return "モーションの動画変換を仕上げています…";
     case "sending": return "モーションを送信しています…";
+    case "measuring":
     case "rendering": {
       const { completedFrames, totalFrames } = progress;
       const percent = Math.floor(completedFrames * 100 / totalFrames);
-      return `モーションを生成しています… ${percent}%（${completedFrames}/${totalFrames}フレーム）`;
+      const action = progress.stage === "measuring" ? "モーションの表示範囲を確認しています" : "モーションを生成しています";
+      return `${action}… ${percent}%（${completedFrames}/${totalFrames}フレーム）`;
     }
   }
 }

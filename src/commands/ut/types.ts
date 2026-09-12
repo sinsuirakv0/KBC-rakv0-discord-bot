@@ -89,7 +89,15 @@ export interface UtMotionRenderer {
 
 export type UtMotionProgress =
   | { stage: "queued" | "loading" | "encoding" | "sending" }
-  | { stage: "rendering"; completedFrames: number; totalFrames: number };
+  | { stage: "measuring" | "rendering"; completedFrames: number; totalFrames: number };
+
+export interface UtMotionDrawPacket {
+  partIndex: number;
+  positions: readonly number[];
+  uvs: readonly number[];
+  opacity: number;
+  blendMode: number;
+}
 
 export interface UtMotionAssets {
   sprite: Uint8Array;
@@ -104,7 +112,8 @@ export interface UtMotionWorkerInput {
 }
 
 export type UtMotionWorkerMessage =
-  | { kind: "ready" | "invalid" }
+  | { kind: "ready"; width: number; height: number; palette?: Uint8Array }
+  | { kind: "invalid" }
   | { kind: "progress"; progress: UtMotionProgress }
   | { kind: "result"; data: Uint8Array };
 

@@ -22,6 +22,7 @@ import {
 import { parseUtRequest } from "./parsers";
 import { utMotionRenderer } from "./motion-renderer";
 import { createUtMotionProgress } from "./motion-progress";
+import { UtMotionTimeoutError } from "./motion-timeout";
 import {
   UnitBuy,
   UtDataSource,
@@ -128,7 +129,9 @@ async function sendMotion(
     await progress.finish("モーションの生成・送信が完了しました。");
   } catch (error) {
     console.error("Ut motion rendering failed.", error);
-    await progress.finish(RENDER_ERROR_MESSAGE);
+    await progress.finish(error instanceof UtMotionTimeoutError
+      ? "モーションの処理が時間制限に達しました。フレーム範囲を短くして、もう一度お試しください。"
+      : RENDER_ERROR_MESSAGE);
   }
 }
 
