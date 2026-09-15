@@ -5,7 +5,7 @@ const { createUtCommand } = require("../dist/commands/ut/command");
 const { createRemoteUtDataSource } = require("../dist/commands/ut/data-source");
 const { createUtMotionRenderer } = require("../dist/commands/ut/motion-renderer");
 const { createUtMotionProgress } = require("../dist/commands/ut/motion-progress");
-const { createMotionCanvas } = require("../dist/commands/ut/motion-canvas");
+const { createMotionCanvas } = require("../dist/commands/shared/motion/canvas");
 const {
   normalizeSearchText,
   resolveMotionAssetPlan,
@@ -331,6 +331,8 @@ test("ut resolves shared egg assets for origin and motion", () => {
       form: "f",
       format: "mp4",
       full: true,
+      filenameStem: "ut-656-f-motion",
+      previewScale: 1,
       segments: [
         { motion: "move", range: { start: 1, end: 15 } },
         { motion: "attack" },
@@ -540,6 +542,7 @@ async function motionFixture() {
   return {
     plan: {
       id: "001", form: "f", format: "png", full: false, segments: [{ motion: "move", frame: 0 }],
+      filenameStem: "ut-001-f-motion", previewScale: 1,
       spritePath: "sprite.png", imgcutPath: "model.imgcut", modelPath: "model.mamodel",
       animationPaths: { move: "move.maanim", attack: "attack.maanim" },
     },
@@ -612,7 +615,7 @@ test("ut renderer defers queued loading, releases failures, and never starts an 
   assert.equal(invalid, undefined);
   assert.ok(await renderer.render(plan, fetchAsset));
   await assert.rejects(createUtMotionRenderer({ timeoutMs: 1 }).render(plan, fetchAsset), /timed out/);
-  const timeouts = require("../dist/commands/ut/motion-timeout");
+  const timeouts = require("../dist/commands/shared/motion/timeout");
   const files = require("node:fs/promises");
   const writeFile = files.writeFile;
   let cancelWrite;
@@ -636,8 +639,8 @@ test("ut renderer defers queued loading, releases failures, and never starts an 
 });
 
 test("ut layout limits long and distant effects, supports full framing and 4x PNG, and ignores transparent margins", async () => {
-  const { createMotionLayout } = require("../dist/commands/ut/motion-layout");
-  const { createVisibleCutBounds } = require("../dist/commands/ut/motion-canvas");
+  const { createMotionLayout } = require("../dist/commands/shared/motion/layout");
+  const { createVisibleCutBounds } = require("../dist/commands/shared/motion/canvas");
   const { createCanvas, loadImage } = require("@napi-rs/canvas");
   const { utMotionMaxPixels, utMotionMaxDimension, utMotionPadding } = require("../dist/config/ut");
   const whole = { left: 0, top: 0, right: 1, bottom: 1 };

@@ -26,6 +26,8 @@ archive/
 !tests/item.test.js
 !tests/st.test.js
 !tests/tut.test.js
+!docs/requirements/tut.md
+!docs/implementation/tut-command.md
 !tests/ut.test.js
 
 !tests/skd.test.js
@@ -36,4 +38,4 @@ archive/
 !docs/implementation/ut-command.md
 !docs/decisions/command-help-and-progress.md
 !docs/implementation/command-help-and-discord-output.md
-!src/commands/ut/vendor/docs/motion-engine.md
+!src/commands/shared/motion/vendor/docs/motion-engine.md

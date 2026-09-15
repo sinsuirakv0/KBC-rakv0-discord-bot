@@ -1,4 +1,8 @@
 ﻿import { normalizeSearchText } from "../shared/search";
+import { MotionKind, MotionPlan, MotionRequest } from "../shared/motion/types";
+import { buildMotionAnimationSuffix } from "../shared/motion/asset-suffix";
+import { buildAssetPath } from "../ut/domain";
+import { CharacterAssets } from "../ut/types";
 import {
   EnemyAliasEntry,
   EnemySearchData,
@@ -76,4 +80,36 @@ export function resolveEnemyDisplayName(match: TutSearchMatch): string {
 export function buildEnemyIconFilename(id: number): string {
   if (!Number.isSafeInteger(id) || id < 0) throw new Error("Invalid enemy ID");
   return `enemy_icon_${String(id).padStart(3, "0")}.png`;
+}
+
+export function resolveEnemyMotionPlan(
+  assets: CharacterAssets,
+  id: number,
+  request: MotionRequest,
+): MotionPlan | undefined {
+  if (!Number.isSafeInteger(id) || id < 0) return undefined;
+  const assetId = String(id).padStart(3, "0");
+  const unit = assets.units[id];
+  const template = assets.pathTemplates.i;
+  if (!unit || unit.id !== assetId || !template) return undefined;
+  const suffixes = unit.suffixes.i;
+  if (!suffixes?.includes("_e.imgcut") || !suffixes.includes("_e.mamodel")) {
+    return undefined;
+  }
+  const animationPaths: Partial<Record<MotionKind, string>> = {};
+  for (const segment of request.segments) {
+    if (animationPaths[segment.motion]) continue;
+    const suffix = buildMotionAnimationSuffix("e", segment.motion);
+    if (!suffixes.includes(suffix)) return undefined;
+    animationPaths[segment.motion] = buildAssetPath(template, assetId, suffix);
+  }
+  return {
+    ...request,
+    filenameStem: `tut-${assetId}-motion`,
+    previewScale: id === 0 ? 2.25 : 1,
+    spritePath: `Number/${assetId}_e.png`,
+    imgcutPath: buildAssetPath(template, assetId, "_e.imgcut"),
+    modelPath: buildAssetPath(template, assetId, "_e.mamodel"),
+    animationPaths,
+  };
 }

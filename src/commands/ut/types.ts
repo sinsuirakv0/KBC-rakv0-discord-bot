@@ -1,4 +1,17 @@
 ﻿import { CommandAttachment } from "../types";
+import {
+  MotionAssets,
+  MotionDrawPacket,
+  MotionFormat,
+  MotionKind,
+  MotionPlan,
+  MotionProgress,
+  MotionRenderer,
+  MotionRequest,
+  MotionSegment,
+  MotionWorkerInput,
+  MotionWorkerMessage,
+} from "../shared/motion/types";
 
 export interface CharacterForm {
   name: string;
@@ -53,71 +66,25 @@ export interface UtOriginRequest {
   variant: UtOriginVariant;
 }
 
-export type UtMotionFormat = "png" | "mp4" | "gif";
-export type UtMotionKind = "attack" | "move" | "idle" | "knockback";
+export type UtMotionFormat = MotionFormat;
+export type UtMotionKind = MotionKind;
+export type UtMotionSegment = MotionSegment;
 
-export interface UtMotionSegment {
-  motion: UtMotionKind;
-  range?: { start: number; end: number };
-  frame?: number;
-}
-
-export interface UtMotionRequest {
-  format: UtMotionFormat;
+export interface UtMotionRequest extends MotionRequest {
   form: UtForm;
-  full: boolean;
-  segments: readonly UtMotionSegment[];
 }
 
-export interface UtMotionAssetPlan {
+export interface UtMotionAssetPlan extends MotionPlan {
   id: string;
   form: UtForm;
-  format: UtMotionFormat;
-  full: boolean;
-  segments: readonly UtMotionSegment[];
-  spritePath: string;
-  imgcutPath: string;
-  modelPath: string;
-  animationPaths: Readonly<Partial<Record<UtMotionKind, string>>>;
 }
 
-export interface UtMotionRenderer {
-  render(
-    plan: UtMotionAssetPlan,
-    fetchAsset: (relativePath: string) => Promise<Uint8Array>,
-    onProgress?: (progress: UtMotionProgress) => void,
-  ): Promise<CommandAttachment | undefined>;
-}
-
-export type UtMotionProgress =
-  | { stage: "queued" | "loading" | "encoding" | "sending" }
-  | { stage: "measuring" | "rendering"; completedFrames: number; totalFrames: number };
-
-export interface UtMotionDrawPacket {
-  partIndex: number;
-  positions: readonly number[];
-  uvs: readonly number[];
-  opacity: number;
-  blendMode: number;
-}
-
-export interface UtMotionAssets {
-  sprite: Uint8Array;
-  imgcut: Uint8Array;
-  model: Uint8Array;
-  animations: Readonly<Partial<Record<UtMotionKind, Uint8Array>>>;
-}
-
-export interface UtMotionWorkerInput {
-  plan: UtMotionAssetPlan;
-  assets: UtMotionAssets;
-}
-
-export type UtMotionWorkerMessage =
-  | { kind: "ready"; width: number; height: number; palette?: Uint8Array }
-  | { kind: "invalid" }
-  | { kind: "progress"; progress: UtMotionProgress }
-  | { kind: "result"; data: Uint8Array };
+export type UtMotionRenderer = MotionRenderer;
+export type UtMotionProgress = MotionProgress;
+export type UtMotionDrawPacket = MotionDrawPacket;
+export type UtMotionAssets = MotionAssets;
+export type UtMotionWorkerInput = MotionWorkerInput;
+export type UtMotionWorkerMessage = MotionWorkerMessage;
 
 export type UtRequest =
   | { kind: "landing" }

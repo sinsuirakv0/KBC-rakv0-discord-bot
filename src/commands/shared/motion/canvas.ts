@@ -1,6 +1,6 @@
 ﻿import { Canvas, createCanvas, Image } from "@napi-rs/canvas";
-import { MotionBounds } from "./motion-layout";
-import { UtMotionDrawPacket } from "./types";
+import { MotionBounds } from "./layout";
+import { MotionDrawPacket } from "./types";
 
 const BLEND_MODES = ["source-over", "lighter", "multiply", "screen"] as const;
 
@@ -42,7 +42,7 @@ export function createVisibleCutBounds(
       } : undefined,
     });
   }
-  return (packet: UtMotionDrawPacket): MotionBounds | undefined => {
+  return (packet: MotionDrawPacket): MotionBounds | undefined => {
     // 乗算では透明領域も黒くなるため、切り抜き全体が表示範囲になる。
     if (packet.blendMode === 2) return { left: 0, top: 0, right: 1, bottom: 1 };
     const u = packet.uvs;
@@ -59,7 +59,7 @@ export function createMotionCanvas(image: Image, width: number, height: number) 
   const context = canvas.getContext("2d");
   let multiplyLayer: Canvas | undefined;
 
-  function draw(packets: readonly UtMotionDrawPacket[]): void {
+  function draw(packets: readonly MotionDrawPacket[]): void {
     context.resetTransform();
     context.globalAlpha = 1;
     context.globalCompositeOperation = "source-over";

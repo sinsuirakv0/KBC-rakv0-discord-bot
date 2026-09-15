@@ -1,11 +1,11 @@
 import { once } from "node:events";
 import { parentPort, workerData } from "node:worker_threads";
 import { loadImage } from "@napi-rs/canvas";
-import { utMotionPngPixelRatio, utMotionVideoMaxPixels } from "../../config/ut";
-import { createMotionCanvas, createVisibleCutBounds } from "./motion-canvas";
-import { createMotionLayout } from "./motion-layout";
-import { createMotionPaletteSample } from "./motion-palette";
-import { UtMotionDrawPacket, UtMotionWorkerInput, UtMotionWorkerMessage } from "./types";
+import { motionPngPixelRatio, motionVideoMaxPixels } from "../../../config/motion";
+import { createMotionCanvas, createVisibleCutBounds } from "./canvas";
+import { createMotionLayout } from "./layout";
+import { createMotionPaletteSample } from "./palette";
+import { MotionDrawPacket, MotionWorkerInput, MotionWorkerMessage } from "./types";
 import {
   buildNativeDrawPackets,
   createMotionProject,
@@ -17,8 +17,8 @@ import {
 async function render(): Promise<void> {
   if (!parentPort) throw new Error("Motion renderer requires a worker thread");
   const port = parentPort;
-  const send = (message: UtMotionWorkerMessage) => port.postMessage(message);
-  const { plan, assets } = workerData as UtMotionWorkerInput;
+  const send = (message: MotionWorkerMessage) => port.postMessage(message);
+  const { plan, assets } = workerData as MotionWorkerInput;
   const decode = (data: Uint8Array) => Buffer.from(data).toString("utf8");
   const image = await loadImage(Buffer.from(assets.sprite));
   const motions = Object.fromEntries(Object.entries(assets.animations).map(
@@ -63,11 +63,9 @@ async function render(): Promise<void> {
       report("measuring", ++measuredFrames);
     }
   }
-  const previewScale = plan.id === "000" && plan.form === "f" ? 2.25
-    : plan.id === "009" && plan.form === "f" ? 0.82 : 1;
-  const view = layout.finish(previewScale * 0.5, {
-    maxPixels: plan.format === "png" ? undefined : utMotionVideoMaxPixels,
-    pixelRatio: plan.format === "png" ? utMotionPngPixelRatio : 1,
+  const view = layout.finish(plan.previewScale * 0.5, {
+    maxPixels: plan.format === "png" ? undefined : motionVideoMaxPixels,
+    pixelRatio: plan.format === "png" ? motionPngPixelRatio : 1,
     full: plan.full,
   });
   const { canvas, draw } = createMotionCanvas(image, view.width, view.height);
@@ -87,11 +85,11 @@ async function render(): Promise<void> {
   report("rendering", 0);
 
   let completedFrames = 0;
-  let previousPackets: readonly UtMotionDrawPacket[] | undefined;
+  let previousPackets: readonly MotionDrawPacket[] | undefined;
   let previousPixels: Buffer | undefined;
   for (const segment of segments) {
     for (let frame = segment.start; frame <= segment.end; frame += 1) {
-      const packets: readonly UtMotionDrawPacket[] = buildNativeDrawPackets(project, segment.motion, frame, view).packets;
+      const packets: readonly MotionDrawPacket[] = buildNativeDrawPackets(project, segment.motion, frame, view).packets;
       const unchanged = previousPackets?.length === packets.length && packets.every((packet, index) => {
         const previous = previousPackets![index];
         return packet.opacity === previous.opacity && packet.blendMode === previous.blendMode

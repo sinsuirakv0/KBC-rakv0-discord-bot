@@ -2,6 +2,8 @@
   enemyNames: string;
   aliases: string;
   enemyIconsBase: string;
+  siteDataBase?: string;
+  characterAssets?: string;
 }
 
 const siteDataBase =
@@ -12,6 +14,8 @@ export const tutDataUrls: TutDataUrls = {
   aliases:
     "https://raw.githubusercontent.com/Sugar2550/omoroirie/main/data/enemyname.json",
   enemyIconsBase: `${siteDataBase}/Image`,
+  siteDataBase,
+  characterAssets: `${siteDataBase}/character-assets.json`,
 };
 
 export const tutSearchPageUrl =

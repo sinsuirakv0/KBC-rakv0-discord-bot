@@ -20,19 +20,21 @@ export const utSearchPageUrl =
 export const utDetailPageBaseUrl = "https://jarjarblink.github.io/JDB";
 export const utCacheTtlMs = 10 * 60 * 1_000;
 export const utHttpTimeoutMs = 10_000;
-export const utMotionRenderTimeoutMs = 10 * 60_000;
-export const utMotionStallTimeoutMs = 60_000;
-export const utMotionFrameRate = 30;
-export const utMotionMaxPixels = 640 * 480;
-export const utMotionVideoMaxPixels = 480 * 400;
-export const utMotionMaxDimension = 960;
-export const utMotionPngPixelRatio = 4;
-export const utMotionPaletteSampleCount = 16;
-export const utMotionPaletteSampleSize = 128;
-export const utMotionPadding = 8;
-export const utMotionViewportSideMargin = 1;
-export const utMotionViewportTopMargin = 0.35;
-export const utMotionViewportBottomMargin = 0.1;
-export const utMotionProgressIntervalMs = 2_000;
+export {
+  motionRenderTimeoutMs as utMotionRenderTimeoutMs,
+  motionStallTimeoutMs as utMotionStallTimeoutMs,
+  motionFrameRate as utMotionFrameRate,
+  motionMaxPixels as utMotionMaxPixels,
+  motionVideoMaxPixels as utMotionVideoMaxPixels,
+  motionMaxDimension as utMotionMaxDimension,
+  motionPngPixelRatio as utMotionPngPixelRatio,
+  motionPaletteSampleCount as utMotionPaletteSampleCount,
+  motionPaletteSampleSize as utMotionPaletteSampleSize,
+  motionPadding as utMotionPadding,
+  motionViewportSideMargin as utMotionViewportSideMargin,
+  motionViewportTopMargin as utMotionViewportTopMargin,
+  motionViewportBottomMargin as utMotionViewportBottomMargin,
+  motionProgressIntervalMs as utMotionProgressIntervalMs,
+} from "./motion";
 export const utReactionTimeoutMs = 60_000;
 export const utPageSize = 20;

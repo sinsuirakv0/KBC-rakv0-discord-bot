@@ -6,6 +6,7 @@ const { createRemoteTutDataSource } = require("../dist/commands/tut/data-source"
 const {
   buildEnemySearchData,
   resolveEnemyDisplayName,
+  resolveEnemyMotionPlan,
   searchEnemies,
 } = require("../dist/commands/tut/domain");
 const { formatEnemyDetail } = require("../dist/commands/tut/formatters");
@@ -101,6 +102,83 @@ test("tut parses controls and searches IDs, normalized names, raw aliases, and s
     formatEnemyDetail(searchEnemies(data, "2", false)[0]),
     "2 黒ネコの城 (ダミー)\nhttps://jarjarblink.github.io/JDB/t000.html?cc=ja&unit=2",
   );
+});
+
+test("tut motion parses enemy-only formats and resolves validated _e assets", () => {
+  assert.deepEqual(parseTutRequest(["0", "motion", "png", "a", "15", "--full", "-f"]), {
+    kind: "search", query: "0", force: true, origin: false,
+    motion: { format: "png", full: true, segments: [{ motion: "attack", frame: 15 }] },
+  });
+  assert.deepEqual(parseTutRequest(["犬", "motion", "mp4", "w", "1~~15", "i", "0", "30", "k"]), {
+    kind: "search", query: "犬", force: false, origin: false,
+    motion: { format: "mp4", full: false, segments: [
+      { motion: "move", range: { start: 1, end: 15 } },
+      { motion: "idle", range: { start: 0, end: 30 } },
+      { motion: "knockback" },
+    ] },
+  });
+  assert.deepEqual(parseTutRequest(["0", "motion", "gif", "a", "--full"]), {
+    kind: "search", query: "0", force: false, origin: false,
+    motion: { format: "gif", full: true, segments: [{ motion: "attack" }] },
+  });
+  for (const args of [
+    ["0", "motion", "png", "f", "a"],
+    ["0", "motion", "png", "a", "-1"],
+    ["0", "motion", "mp4", "a", "2~~1"],
+    ["0", "origin", "motion", "png", "a"],
+  ]) assert.deepEqual(parseTutRequest(args), { kind: "invalid-motion" });
+  const units = [{ id: "000", suffixes: { i: [
+    "_e.imgcut", "_e.mamodel", "_e00.maanim", "_e01.maanim", "_e02.maanim", "_e03.maanim",
+  ] } }];
+  const assets = { pathTemplates: { i: "ImageData/{id}{suffix}" }, units };
+  const request = parseTutRequest(["0", "motion", "mp4", "w", "a"]).motion;
+  assert.deepEqual(resolveEnemyMotionPlan(assets, 0, request), {
+    ...request,
+    filenameStem: "tut-000-motion", previewScale: 2.25,
+    spritePath: "Number/000_e.png",
+    imgcutPath: "ImageData/000_e.imgcut",
+    modelPath: "ImageData/000_e.mamodel",
+    animationPaths: {
+      move: "ImageData/000_e00.maanim",
+      attack: "ImageData/000_e02.maanim",
+    },
+  });
+  assert.equal(resolveEnemyMotionPlan({ ...assets, units: [{ ...units[0], suffixes: { i: ["_e.imgcut", "_e.mamodel"] } }] }, 0, request), undefined);
+  assert.equal(resolveEnemyMotionPlan(assets, 1, request), undefined);
+});
+
+test("tut motion selects candidates, sends progress and attachments, and reports invalid frames", async () => {
+  const assets = { pathTemplates: { i: "ImageData/{id}{suffix}" }, units: [0, 1].map(id => ({
+    id: String(id).padStart(3, "0"), suffixes: { i: ["_e.imgcut", "_e.mamodel", "_e02.maanim"] },
+  })) };
+  const paths = [];
+  const renderer = { async render(plan, fetchAsset, onProgress) {
+    assert.equal(plan.filenameStem, "tut-001-motion");
+    assert.equal(plan.previewScale, 1);
+    paths.push(plan.spritePath, plan.animationPaths.attack);
+    onProgress({ stage: "rendering", completedFrames: 1, totalFrames: 1 });
+    await fetchAsset(plan.spritePath);
+    return { data: Uint8Array.from([1, 2, 3]), filename: "tut-001-motion.png" };
+  } };
+  const dataSource = {
+    async fetchSearchData() { return repeatedData(2); },
+    async fetchEnemyMotionAssets() { return assets; },
+    async fetchMotionAsset() { return Uint8Array.from([1]); },
+  };
+  const output = createFakeOutput(["2️⃣"]);
+  await createTutCommand({ dataSource, motionRenderer: renderer })
+    .execute(commandContext(output), ["共通", "motion", "png", "a"]);
+  assert.deepEqual(paths, ["Number/001_e.png", "ImageData/001_e02.maanim"]);
+  assert.equal(output.attachments[0].filename, "tut-001-motion.png");
+  assert.equal(output.messages[1].content, "モーションの生成・送信が完了しました。");
+  const invalid = createFakeOutput();
+  await createTutCommand({ dataSource: { ...dataSource, async fetchSearchData() { return repeatedData(1); } },
+    motionRenderer: { async render() { return undefined; } },
+  }).execute(commandContext(invalid), ["0", "motion", "png", "a", "999"]);
+  assert.equal(invalid.messages[0].content, "指定したフレームはこのモーションには存在しません。");
+  const malformed = createFakeOutput();
+  await createTutCommand({ dataSource }).execute(commandContext(malformed), ["0", "motion", "png", "f", "a"]);
+  assert.match(malformed.messages[0].content, /motionの指定が正しくありません/);
 });
 
 test("tut applies UT count boundaries, selection, serialized paging, and origin-only attachment", async () => {

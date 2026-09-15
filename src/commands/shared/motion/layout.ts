@@ -1,12 +1,12 @@
 ﻿import {
-  utMotionMaxDimension,
-  utMotionMaxPixels,
-  utMotionPadding,
-  utMotionViewportBottomMargin,
-  utMotionViewportSideMargin,
-  utMotionViewportTopMargin,
-} from "../../config/ut";
-import { UtMotionDrawPacket } from "./types";
+  motionMaxDimension,
+  motionMaxPixels,
+  motionPadding,
+  motionViewportBottomMargin,
+  motionViewportSideMargin,
+  motionViewportTopMargin,
+} from "../../../config/motion";
+import { MotionDrawPacket } from "./types";
 
 export interface MotionBounds {
   left: number;
@@ -25,11 +25,11 @@ function include(target: MotionBounds, source: MotionBounds): void {
 }
 
 export function createMotionLayout(
-  getVisibleBounds: (packet: UtMotionDrawPacket) => MotionBounds | undefined,
-  referencePackets: readonly UtMotionDrawPacket[] = [],
+  getVisibleBounds: (packet: MotionDrawPacket) => MotionBounds | undefined,
+  referencePackets: readonly MotionDrawPacket[] = [],
 ) {
   const parts = new Map<number, MotionBounds>();
-  function measure(packet: UtMotionDrawPacket): MotionBounds | undefined {
+  function measure(packet: MotionDrawPacket): MotionBounds | undefined {
     if (packet.opacity <= 0) return undefined;
     const visible = getVisibleBounds(packet);
     if (!visible) return undefined;
@@ -54,7 +54,7 @@ export function createMotionLayout(
   }
 
   return {
-    add(packets: readonly UtMotionDrawPacket[]): void {
+    add(packets: readonly MotionDrawPacket[]): void {
       for (const packet of packets) {
         const bounds = measure(packet);
         if (!bounds) continue;
@@ -63,7 +63,7 @@ export function createMotionLayout(
         parts.set(packet.partIndex, part);
       }
     },
-    finish(previewScale: number, { maxPixels = utMotionMaxPixels, full = false, pixelRatio = 1 } = {}) {
+    finish(previewScale: number, { maxPixels = motionMaxPixels, full = false, pixelRatio = 1 } = {}) {
       const bounds = emptyBounds();
       const clippedParts: number[] = [];
       for (const part of parts.values()) include(bounds, part);
@@ -71,10 +71,10 @@ export function createMotionLayout(
         // 初期姿勢の周囲だけを拡張し、長い光線と遠方へ動く演出の両方を制限する。
         const span = Math.max(reference.right - reference.left, reference.bottom - reference.top);
         const limit = {
-          left: reference.left - span * utMotionViewportSideMargin,
-          right: reference.right + span * utMotionViewportSideMargin,
-          top: reference.top - span * utMotionViewportTopMargin,
-          bottom: reference.bottom + span * utMotionViewportBottomMargin,
+          left: reference.left - span * motionViewportSideMargin,
+          right: reference.right + span * motionViewportSideMargin,
+          top: reference.top - span * motionViewportTopMargin,
+          bottom: reference.bottom + span * motionViewportBottomMargin,
         };
         const cropped = {
           left: Math.max(bounds.left, limit.left), top: Math.max(bounds.top, limit.top),
@@ -93,10 +93,10 @@ export function createMotionLayout(
       if (!Number.isFinite(bounds.left)) Object.assign(bounds, { left: -16, top: -32, right: 16, bottom: 0 });
       const sourceWidth = Math.max(1, bounds.right - bounds.left);
       const sourceHeight = Math.max(1, bounds.bottom - bounds.top);
-      const padding = utMotionPadding * 2;
+      const padding = motionPadding * 2;
       // 偶数への切り上げと余白を含めても画素数の上限を超えないようにする。
       let scale = Math.min(previewScale,
-        (utMotionMaxDimension - padding - 2) / Math.max(sourceWidth, sourceHeight));
+        (motionMaxDimension - padding - 2) / Math.max(sourceWidth, sourceHeight));
       const areaAt = (value: number) => (sourceWidth * value + padding + 2) * (sourceHeight * value + padding + 2);
       if (areaAt(scale) > maxPixels) {
         let low = 0;
@@ -113,7 +113,7 @@ export function createMotionLayout(
       return {
         width: width * pixelRatio, height: height * pixelRatio, scale: scale * pixelRatio, clippedParts,
         originX: ((width - sourceWidth * scale) / 2 - bounds.left * scale) * pixelRatio,
-        originY: (height - utMotionPadding - bounds.bottom * scale) * pixelRatio,
+        originY: (height - motionPadding - bounds.bottom * scale) * pixelRatio,
       };
     },
   };

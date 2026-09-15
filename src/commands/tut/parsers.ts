@@ -1,4 +1,5 @@
 ﻿import { EnemyAliasEntry, TutRequest } from "./types";
+import { parseMotionArguments } from "../shared/motion/parser";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -10,18 +11,29 @@ export function parseTutRequest(args: readonly string[]): TutRequest {
   let force = false;
   let origin = false;
   const queryParts: string[] = [];
+  const motionParts: string[] = [];
+  let motion = false;
   for (const argument of args) {
     const normalized = argument.toLowerCase();
     if (normalized === "-f" || normalized === "-force") {
       force = true;
     } else if (normalized === "origin") {
       origin = true;
+    } else if (normalized === "motion" && !motion) {
+      motion = true;
     } else {
-      queryParts.push(argument);
+      (motion ? motionParts : queryParts).push(argument);
     }
   }
   const query = queryParts.join(" ").trim();
-  return query ? { kind: "search", query, force, origin } : { kind: "help" };
+  if (!query) return { kind: "help" };
+  if (!motion) return { kind: "search", query, force, origin };
+  const parsed = parseMotionArguments(motionParts);
+  if (!parsed || origin) return { kind: "invalid-motion" };
+  return {
+    kind: "search", query, force, origin: false,
+    motion: { format: parsed.format, full: parsed.full, segments: parsed.segments },
+  };
 }
 
 export function parseEnemyNameTsv(text: string): readonly (string | undefined)[] {

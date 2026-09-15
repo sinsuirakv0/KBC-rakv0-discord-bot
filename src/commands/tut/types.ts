@@ -1,4 +1,6 @@
 ﻿import { CommandAttachment } from "../types";
+import { MotionRequest } from "../shared/motion/types";
+import { CharacterAssets } from "../ut/types";
 
 export interface EnemyAliasEntry {
   id: number;
@@ -24,9 +26,12 @@ export interface TutSearchMatch {
 export type TutRequest =
   | { kind: "landing" }
   | { kind: "help" }
-  | { kind: "search"; query: string; force: boolean; origin: boolean };
+  | { kind: "invalid-motion" }
+  | { kind: "search"; query: string; force: boolean; origin: boolean; motion?: MotionRequest };
 
 export interface TutDataSource {
   fetchSearchData(): Promise<EnemySearchData>;
   fetchEnemyPng(id: number): Promise<CommandAttachment>;
+  fetchEnemyMotionAssets(): Promise<CharacterAssets>;
+  fetchMotionAsset(relativePath: string): Promise<Uint8Array>;
 }

@@ -11,16 +11,23 @@ src/commands/ut/
   domain.ts        検索正規化、一致元決定、共有stemとassetパスの解決
   formatters.ts    詳細URL、候補一覧、ページ本文の整形
   parsers.ts       引数、character-index、character-assets、unitbuyの検証
-  motion-renderer.ts  待機列、アセット取得、workerとFFmpegの実行・解放
-  motion-worker.ts    アセット解析、区間検証、フレーム計算・画像化
-  motion-canvas.ts    スプライトの切り抜き、変換、合成
-  motion-layout.ts    全フレームの境界、初期姿勢基準の範囲制限、固定画角
-  motion-palette.ts   GIF共通パレット用の小さな色見本
-  motion-timeout.ts   無進捗と全体上限の監視
-  motion-progress.ts 更新間隔、通知集約、進行度メッセージ編集
-  vendor/            KBC-rakv0から固定版のmotion計算を同梱
+  motion-renderer.ts  共通rendererの互換export
+  motion-timeout.ts   共通監視の互換export
+  motion-progress.ts 共通進行度の互換export
   types.ts         外部データ、検索結果、取得口の型
-src/config/ut.ts   URL、TTL、HTTP・描画・リアクション設定、ページ件数
+src/commands/shared/motion/
+  asset-suffix.ts  ut・tut共通のモーション番号からmaanim suffixを生成
+  parser.ts        ut・tut共通の形式・フレーム・区間・--full解析
+  renderer.ts      共通待機列、アセット取得、workerとFFmpegの実行・解放
+  worker.ts        アセット解析、区間検証、フレーム計算・画像化
+  canvas.ts        スプライトの切り抜き、変換、合成
+  layout.ts        全フレームの境界、初期姿勢基準の範囲制限、固定画角
+  palette.ts       GIF共通パレット用の小さな色見本
+  timeout.ts       無進捗と全体上限の監視
+  progress.ts      更新間隔、通知集約、進行度メッセージ編集
+  vendor/          KBC-rakv0から固定版のmotion計算を同梱
+src/config/ut.ts   URL、TTL、HTTP・リアクション設定、ページ件数
+src/config/motion.ts  共通の画角・サイズ・生成制限
 tests/ut.test.js   主要リスクの単体テスト
 ```
 
@@ -66,9 +73,9 @@ suffixが未登録なら別形態へフォールバックしない。成功時�
 
 domainはoriginと同じ共有stemを一度だけ解決し、`character-assets.json`の`i`登録からPNG以外の必須ファイルと、要求された`maanim`だけを許可する。ファイル番号はmove `00`、idle `01`、attack `02`、knockback `03`である。要求された一式が欠ける場合、rendererを起動せず未登録エラーを返す。
 
-`motion-renderer.ts`の`createUtMotionRenderer`は待機列を持つ。既定インスタンスはBotプロセス全体で共有し、元アセットの取得から生成完了まで1件ずつ処理する。`loadMotionAssets`は順番が来てから必須3ファイルと要求されたanimationだけを並列取得する。成功・失敗・範囲外のどれでも`finally`で待機列を解放する。元アセットや生成物の新しいキャッシュは設けない。
+`shared/motion/renderer.ts`の`createMotionRenderer`は待機列を持つ。既定インスタンスは`ut`・`tut`で共有し、元アセットの取得から生成完了まで1件ずつ処理する。`loadMotionAssets`は順番が来てから必須3ファイルと要求されたanimationだけを並列取得する。成功・失敗・範囲外のどれでも`finally`で待機列を解放する。元アセットや生成物の新しいキャッシュは設けない。`ut/motion-renderer.ts`は既存テストと呼び出し用の互換exportである。
 
-`renderInWorker`は`worker_threads`で`motion-worker.ts`を起動する。workerは同梱した`vendor/motion-engine.js`でimgcut/model/animationを解析し、全区間を検証してから描画を始める。最終フレームは`maanim`から計算し、範囲外を自動補正しない。`buildNativeDrawPackets`の結果を`motion-canvas.ts`の`@napi-rs/canvas`で描く。背景`#252a32`と30fpsを維持し、原点・寸法・倍率は全出力フレームから先に決定する。取得元・関数の関係・ラスタライズ差は`src/commands/ut/vendor/docs/motion-engine.md`に記録した。
+`renderInWorker`は`worker_threads`で`shared/motion/worker.ts`を起動する。workerは同梱した`vendor/motion-engine.js`でimgcut/model/animationを解析し、全区間を検証してから描画を始める。最終フレームは`maanim`から計算し、範囲外を自動補正しない。`buildNativeDrawPackets`の結果を`shared/motion/canvas.ts`の`@napi-rs/canvas`で描く。背景`#252a32`と30fpsを維持し、原点・寸法・倍率は全出力フレームから先に決定する。取得元・関数の関係・ラスタライズ差は`src/commands/shared/motion/vendor/docs/motion-engine.md`に記録した。
 
 `createVisibleCutBounds`はスプライトを一度読み、切り抜きごとの非透明領域を正規化座標で保持する。加算・スクリーンでは効果を持たない黒も除く。乗算は透明部分も黒く描くため、切り抜き全体を使う。`createMotionLayout.add`は全指定フレームの回転・拡縮・移動後の境界をパーツ単位で集約する。全フレームの画像や頂点を保持せず、描画時に計算し直す。
 
@@ -84,7 +91,7 @@ PNGは1枚だけ符号化して親へ返す。動画はPNGへ圧縮せず、RGBA
 
 command層は通常検索と同じ候補数分岐を使い、1件またはリアクションで確定した1件だけをrendererへ渡す。データ取得失敗、未登録、範囲外、生成失敗を別の利用者向け文言へ変換し、内部情報はログだけに残す。
 
-`sendMotion`はキャラ確定後に本文を一つ送り、`motion-progress.ts`へ渡す。rendererからの通知は待機・取得・表示範囲確認・フレーム生成・動画仕上げへ変換し、添付送信の前後は送信中・完了へ編集する。範囲確認と生成は、それぞれ実フレーム数から割合を算出する。同段階の更新は2秒以上空け、Discord編集中は最新本文一つへ集約する。編集失敗は生成を失敗させず、終了後に遅れた進行度で完了文を上書きしない。
+`sendMotion`はキャラ確定後に本文を一つ送り、互換exportを通して`shared/motion/progress.ts`へ渡す。rendererからの通知は待機・取得・表示範囲確認・フレーム生成・動画仕上げへ変換し、添付送信の前後は送信中・完了へ編集する。範囲確認と生成は、それぞれ実フレーム数から割合を算出する。同段階の更新は2秒以上空け、Discord編集中は最新本文一つへ集約する。編集失敗は生成を失敗させず、終了後に遅れた進行度で完了文を上書きしない。
 
 ## コンテナ
 

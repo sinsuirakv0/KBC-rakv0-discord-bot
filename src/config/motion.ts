@@ -1,0 +1,14 @@
+export const motionRenderTimeoutMs = 10 * 60_000;
+export const motionStallTimeoutMs = 60_000;
+export const motionFrameRate = 30;
+export const motionMaxPixels = 640 * 480;
+export const motionVideoMaxPixels = 480 * 400;
+export const motionMaxDimension = 960;
+export const motionPngPixelRatio = 4;
+export const motionPaletteSampleCount = 16;
+export const motionPaletteSampleSize = 128;
+export const motionPadding = 8;
+export const motionViewportSideMargin = 1;
+export const motionViewportTopMargin = 0.35;
+export const motionViewportBottomMargin = 0.1;
+export const motionProgressIntervalMs = 2_000;

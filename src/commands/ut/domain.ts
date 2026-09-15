@@ -12,6 +12,7 @@
   UtSearchMatch,
 } from "./types";
 import { normalizeSearchText } from "../shared/search";
+import { buildMotionAnimationSuffix } from "../shared/motion/asset-suffix";
 
 export { normalizeSearchText };
 
@@ -149,13 +150,6 @@ export function resolveUnitAssetStem(
     : { assetId: id, suffix: form, shared: false };
 }
 
-const MOTION_FILE_INDEX: Readonly<Record<UtMotionKind, number>> = {
-  move: 0,
-  idle: 1,
-  attack: 2,
-  knockback: 3,
-};
-
 export function resolveMotionAssetPlan(
   assets: CharacterAssets,
   unitBuy: UnitBuy,
@@ -180,7 +174,7 @@ export function resolveMotionAssetPlan(
   const animationPaths: Partial<Record<UtMotionKind, string>> = {};
   for (const segment of request.segments) {
     if (animationPaths[segment.motion]) continue;
-    const suffix = `_${stem.suffix}0${MOTION_FILE_INDEX[segment.motion]}.maanim`;
+    const suffix = buildMotionAnimationSuffix(stem.suffix, segment.motion);
     if (!unit.suffixes.i?.includes(suffix)) return undefined;
     animationPaths[segment.motion] = buildAssetPath(template, stem.assetId, suffix);
   }
@@ -190,6 +184,9 @@ export function resolveMotionAssetPlan(
     form: request.form,
     format: request.format,
     full: request.full,
+    filenameStem: `ut-${id}-${request.form}-motion`,
+    previewScale: id === "000" && request.form === "f" ? 2.25
+      : id === "009" && request.form === "f" ? 0.82 : 1,
     segments: request.segments,
     spritePath: `Number/${stem.assetId}_${stem.suffix}.png`,
     imgcutPath: buildAssetPath(template, stem.assetId, imgcutSuffix),

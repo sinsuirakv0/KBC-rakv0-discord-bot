@@ -1,4 +1,6 @@
 ﻿import { createHash } from "node:crypto";
+import { utDataUrls } from "../../config/ut";
+import { createRemoteUtDataSource } from "../ut/data-source";
 import {
   TutDataUrls,
   tutCacheTtlMs,
@@ -57,6 +59,19 @@ export function createRemoteTutDataSource(
   const ttlMs = options.cacheTtlMs ?? tutCacheTtlMs;
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
+  const siteDataBase = urls.siteDataBase
+    ?? urls.enemyIconsBase.replace(/\/Image\/?$/, "");
+  const motionSource = createRemoteUtDataSource({
+    urls: {
+      ...utDataUrls,
+      siteDataBase,
+      characterAssets: urls.characterAssets ?? `${siteDataBase}/character-assets.json`,
+    },
+    timeoutMs,
+    cacheTtlMs: ttlMs,
+    fetchImpl,
+    now,
+  });
   let resources = new Map<string, ResourceState>();
   let cache: SearchCacheEntry | undefined;
   let inFlight: Promise<EnemySearchData> | undefined;
@@ -118,6 +133,8 @@ export function createRemoteTutDataSource(
   };
 
   return {
+    fetchEnemyMotionAssets: motionSource.fetchCharacterAssets,
+    fetchMotionAsset: motionSource.fetchAsset,
     async fetchSearchData(): Promise<EnemySearchData> {
       if (cache && now() - cache.validatedAt < ttlMs) return cache.value;
       if (!inFlight) {

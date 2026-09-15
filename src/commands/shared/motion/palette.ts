@@ -1,17 +1,17 @@
 ﻿import { createCanvas, Image } from "@napi-rs/canvas";
-import { utMotionPaletteSampleCount, utMotionPaletteSampleSize } from "../../config/ut";
-import { UtMotionDrawPacket } from "./types";
-import { createMotionCanvas } from "./motion-canvas";
+import { motionPaletteSampleCount, motionPaletteSampleSize } from "../../../config/motion";
+import { MotionDrawPacket } from "./types";
+import { createMotionCanvas } from "./canvas";
 
 export async function createMotionPaletteSample(
   image: Image,
   totalFrames: number,
-  drawFrame: (index: number, scale: number) => readonly UtMotionDrawPacket[],
+  drawFrame: (index: number, scale: number) => readonly MotionDrawPacket[],
   width: number,
   height: number,
 ): Promise<Uint8Array> {
-  const count = Math.min(utMotionPaletteSampleCount, totalFrames);
-  const size = utMotionPaletteSampleSize;
+  const count = Math.min(motionPaletteSampleCount, totalFrames);
+  const size = motionPaletteSampleSize;
   const columns = 4;
   const rows = Math.ceil(count / columns);
   const sheet = createCanvas(size * columns, size * (rows + 1));

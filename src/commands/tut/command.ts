@@ -5,9 +5,13 @@
 } from "../../config/tut";
 import { fileCommandHelpSource } from "../help/data-source";
 import { CommandHelpSource } from "../help/types";
+import { createMotionProgress } from "../shared/motion/progress";
+import { motionRenderer as sharedMotionRenderer } from "../shared/motion/renderer";
+import { MotionTimeoutError } from "../shared/motion/timeout";
+import { MotionRenderer, MotionRequest } from "../shared/motion/types";
 import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../types";
 import { remoteTutDataSource } from "./data-source";
-import { searchEnemies } from "./domain";
+import { resolveEnemyMotionPlan, searchEnemies } from "./domain";
 import {
   formatEnemyDetail,
   formatEnemyLabel,
@@ -24,6 +28,12 @@ const NOT_FOUND_MESSAGE = "該当する敵ユニットが見つかりません�
 const DATA_ERROR_MESSAGE =
   "敵データを取得できませんでした。時間をおいて再度お試しください。";
 const IMAGE_ERROR_MESSAGE = "敵画像の取得に失敗しました。";
+const INVALID_MOTION_MESSAGE =
+  "motionの指定が正しくありません。o.tut help で使い方を確認してください。";
+const MISSING_MOTION_MESSAGE = "指定したモーションはこの敵には存在しません。";
+const INVALID_FRAME_MESSAGE = "指定したフレームはこのモーションには存在しません。";
+const RENDER_ERROR_MESSAGE =
+  "モーションの生成に失敗しました。しばらくしてからもう一度お試しください。";
 const LIST_FOOTER = "詳細は o.tut <ID> で表示できます。";
 
 export interface TutCommandDependencies {
@@ -31,6 +41,7 @@ export interface TutCommandDependencies {
   helpSource?: CommandHelpSource;
   reactionTimeoutMs?: number;
   pageSize?: number;
+  motionRenderer?: MotionRenderer;
 }
 
 async function sendHelp(
@@ -55,6 +66,49 @@ async function sendEnemyImage(
   } catch (error) {
     console.error("Enemy image retrieval failed.", error);
     await output.send(IMAGE_ERROR_MESSAGE);
+  }
+}
+
+async function sendEnemyMotion(
+  match: TutSearchMatch,
+  request: MotionRequest,
+  dataSource: TutDataSource,
+  renderer: MotionRenderer,
+  output: InteractiveCommandOutput,
+): Promise<void> {
+  const message = await output.send("モーションのデータを確認しています…");
+  const progress = createMotionProgress(message);
+  let assets;
+  try {
+    assets = await dataSource.fetchEnemyMotionAssets();
+  } catch (error) {
+    console.error("Enemy motion metadata retrieval failed.", error);
+    await progress.finish(DATA_ERROR_MESSAGE);
+    return;
+  }
+  const plan = resolveEnemyMotionPlan(assets, match.enemy.id, request);
+  if (!plan) {
+    await progress.finish(MISSING_MOTION_MESSAGE);
+    return;
+  }
+  try {
+    const attachment = await renderer.render(
+      plan,
+      (relativePath) => dataSource.fetchMotionAsset(relativePath),
+      progress.update,
+    );
+    if (!attachment) {
+      await progress.finish(INVALID_FRAME_MESSAGE);
+      return;
+    }
+    await progress.update({ stage: "sending" });
+    await output.sendAttachment(attachment);
+    await progress.finish("モーションの生成・送信が完了しました。");
+  } catch (error) {
+    console.error("Enemy motion rendering failed.", error);
+    await progress.finish(error instanceof MotionTimeoutError
+      ? "モーションの処理が時間制限に達しました。フレーム範囲を短くして、もう一度お試しください。"
+      : RENDER_ERROR_MESSAGE);
   }
 }
 
@@ -167,6 +221,7 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
   const timeoutMs = dependencies.reactionTimeoutMs ?? tutReactionTimeoutMs;
   const pageSize = dependencies.pageSize ?? tutPageSize;
   const helpSource = dependencies.helpSource ?? fileCommandHelpSource;
+  const motionRenderer = dependencies.motionRenderer ?? sharedMotionRenderer;
   return {
     name: "tut",
     guildOnly: true,
@@ -185,6 +240,10 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
         await output.send(tutSearchPageUrl);
         return;
       }
+      if (request.kind === "invalid-motion") {
+        await output.send(INVALID_MOTION_MESSAGE);
+        return;
+      }
 
       let data;
       try {
@@ -200,17 +259,21 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
         return;
       }
 
-      if (request.origin) {
+      if (request.origin || request.motion) {
+        let selected: TutSearchMatch | undefined;
         if (matches.length === 1) {
-          await sendEnemyImage(matches[0], dependencies.dataSource, output);
-          return;
+          selected = matches[0];
+        } else if (matches.length <= TUT_NUMBER_EMOJIS.length) {
+          selected = await selectEnemy(matches, request.query, output, timeoutMs);
+        } else {
+          await sendList(matches, request.query, output, timeoutMs, pageSize);
         }
-        if (matches.length <= TUT_NUMBER_EMOJIS.length) {
-          const selected = await selectEnemy(matches, request.query, output, timeoutMs);
-          if (selected) await sendEnemyImage(selected, dependencies.dataSource, output);
-          return;
+        if (selected && request.origin) {
+          await sendEnemyImage(selected, dependencies.dataSource, output);
         }
-        await sendList(matches, request.query, output, timeoutMs, pageSize);
+        if (selected && request.motion) {
+          await sendEnemyMotion(selected, request.motion, dependencies.dataSource, motionRenderer, output);
+        }
         return;
       }
 
