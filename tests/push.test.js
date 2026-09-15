@@ -159,14 +159,36 @@ test("ready retries and restart send each ordered detail only once", async () =>
   assert.equal(sent.at(-1), "KBC link");
 });
 
-test("ambiguous detail send holds the remaining categories and final link", async () => {
+test("ambiguous detail does not block later posts or another channel's pending mission and link", async () => {
   const store = await fixture();
-  await store.setSubscription({ guildId: "1", channelId: "10", category: "skd" }, true);
+  for (const channelId of ["10", "11"]) await store.setSubscription({ guildId: "1", channelId, category: "skd" }, true);
+  const update = store.update.bind(store);
+  let failLate = true;
+  store.update = (eventId, change) => update(eventId, record => {
+    const next = change(record);
+    const parts = next.deliveries.find(delivery => delivery.channelId === "11")?.followUps;
+    if (failLate && parts?.some((part, index) => index >= 3 && part.status === "attempting" && !part.messageId)) {
+      throw new Error("temporary storage failure");
+    }
+    return next;
+  });
   const sent = [];
-  const transport = { send: async (channel, content) => { sent.push(content); if (content === "sale") throw new Error("lost response"); return String(sent.length); }, edit: async () => {} };
-  await assert.rejects(createDetectionService(store, transport, async () => detailParts.filter(part => part !== "変更"))(readyEvent));
-  await assert.rejects(createDetectionService(await store.restart(), transport)(readyEvent), /reconciliation-required/);
-  assert.deepEqual(sent.slice(1), ["gatya", "sale"]);
+  const transport = { send: async (channel, content) => {
+    sent.push([channel, content]);
+    if (channel === "10" && content === "gatya") throw new Error("lost response");
+    return String(sent.length);
+  }, edit: async () => {} };
+  let builds = 0;
+  await assert.rejects(createDetectionService(store, transport, async () => { builds++; return detailParts; })(readyEvent), /delivery failed/);
+  failLate = false;
+  await assert.rejects(createDetectionService(await store.restart(), transport, async () => assert.fail("saved details"))(readyEvent), /reconciliation-required/);
+  const details = channel => sent.filter(call => call[0] === channel && detailParts.includes(call[1])).map(call => call[1]);
+  assert.deepEqual(details("10"), detailParts);
+  assert.deepEqual(details("11"), detailParts);
+  assert.equal(builds, 1);
+  const record = await store.update(readyEvent.eventId, current => current);
+  assert.deepEqual(record.deliveries[0].followUps.map(part => part.status), ["attempting", "sent", "sent", "sent", "sent", "sent"]);
+  assert.ok(record.deliveries[1].followUps.every(part => part.status === "sent"));
 });
 
 test("independent receivers cannot claim the same pending message twice", async t => {

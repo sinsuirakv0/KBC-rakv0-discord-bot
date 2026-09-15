@@ -19,15 +19,15 @@
 {"version":1,"eventId":"event:123:skd","category":"skd","phase":"detected","detectedAt":"2026-09-05T15:00:00.000Z","types":[]}
 ```
 
-同じeventIdでphase=types、types=["gatya","sale"]を送ると追記する。順序はgatya,sale,itemに正規化し、既受信分との和集合を使う。categoryはskd/ad/notice、ad/noticeはphase=detectedと空のtypesだけを受け付ける。categoryを通知IDの途中で変える要求は拒否する。
+同じeventIdでphase=types、types=["gatya","sale"]を送ると追記する。順序はgatya,sale,itemに正規化し、速報・typesの既受信分との和集合を使う。readyには取得側で確定したtypesと同じ種類のrawを含め、そのtypesを詳細作成の正本として使う。categoryはskd/ad/notice、ad/noticeはphase=detectedと空のtypesだけを受け付ける。categoryを通知IDの途中で変える要求は拒否する。
 
-受信HTTP 200は送信・編集と保存済み状態の更新完了を示す。配送や保存の失敗は503で、送信側は同じIDで再試行できる。認証不一致401、不正データ400、非JSON415、本文上限16 KiB超過413。Secret未設定なら受信サーバーを起動しない。GET /healthはDiscord接続と保存復元状態、GET /health/liveは生存状態を返す。結果不明の再受信は409 reconciliation-required。
+受信HTTP 200は送信・編集と保存済み状態の更新完了を示す。配送や保存の失敗は503で、送信側は同じIDで再試行できる。認証不一致401、不正データ400、非JSON415、本文上限16 KiB超過413。Secret未設定なら受信サーバーを起動しない。GET /healthはDiscord接続と保存復元状態、GET /health/liveは生存状態を返す。結果不明の投稿は保持し、他のpendingが送れる間は503を優先する。送れるpendingがなく結果不明だけ残る場合は409 reconciliation-required。
 
 送信側は保存済みpending単位で通知IDを使い、種類の増加を追記する。Actions再実行・別runへの持ち越しでもIDを変えない。更新前後のcommitとrawパスを含むready受信後、追加がある分類、変更がある場合は共通の変更欄、最後にKBCリンクを送る。
 
 ## 保存と再送
 
-NotificationStoreはGitHubへイベント単位で保存する。送信前にattemptingを確定し、送信後にmessageIdと本文をsentとして確定する。結果不明のattemptingは新規投稿せず保留する。復旧・制限・初期化は[保存基盤](storage.md)を参照。
+NotificationStoreはGitHubへイベント単位で保存する。送信前にattemptingを確定し、送信後にmessageIdと本文をsentとして確定する。結果不明のattemptingは新規投稿せず保留し、後続のpendingは各投稿単位で進める。複数チャンネルでも詳細本文の取得・解析は更新ごとに一度だけ行い、同じ保存済み本文を共有する。復旧・制限・初期化は[保存基盤](storage.md)を参照。
 
 ## コマンドと権限
 

@@ -24,7 +24,7 @@ npm run storage:init が明示的にmeta.jsonを初期化し、設定復元ま�
 
 createDetectionServiceはイベントを保存し、各配送のpendingをattemptingへ保存してからDiscordへ送る。投稿IDと本文をsentとして保存し、以後は同じIDを編集する。保存失敗は成功扱いにしない。
 
-messageIdのないattemptingは結果不明。再受信時は409 reconciliation-requiredを返し、自動再投稿しない。最初の送信例外は503だが、以後は記録に基づき保留する。編集失敗は同じ投稿への再編集で復旧する。解除済み通知先を除外し、途中で追加した通知先へは遡及しない。
+messageIdのないattemptingは結果不明で自動再投稿しない。skd詳細では他のpending投稿を進め、未送信分の一時障害が残れば503、結果不明だけ残れば409 reconciliation-requiredを返す。編集失敗は同じ投稿への再編集で復旧する。解除済み通知先を除外し、途中で追加した通知先へは遡及しない。
 
 復旧はBotを停止してDiscordの実投稿を確認し、確認できたmessageId・本文とstatus=sentを採用する。未送信を確認した場合だけpendingへ戻す。確認できなければ保留を継続する。専用の復旧コマンドは未実装。
 

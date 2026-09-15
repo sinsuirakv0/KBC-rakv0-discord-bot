@@ -4,6 +4,7 @@ export const skdSourceTreeUrl = "https://api.github.com/repos/sinsuirakv0/KBC-ra
 export const skdSourceRevisionUrl = "https://api.github.com/repos/sinsuirakv0/KBC-rakv0-event/git/ref/heads/main";
 export const skdMaxDocumentBytes = 4 * 1024 * 1024;
 export const skdDisplayLimit = 5;
+export const skdMaxDetailMessages = 128;
 export const skdHistoryGroupSeconds = 100;
 
 export function skdHistoryUrl(rawPaths: string[]): string {

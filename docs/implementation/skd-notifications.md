@@ -10,9 +10,9 @@ createScheduleDetailsBuilderはreadyイベントのbeforeRefのGit treeを取得
 
 各コマンドのデータ取得関数は、解析済みdocumentを任意引数で受け取る。通常コマンドは従来どおりJSONを取得し、通知側はdocumentを渡して名前・ID対応表だけを取得する。ガチャのentryLabels、saleのgetStageName / isMissionId / getListStageIds、itemのgetItemScheduleNameを再利用する。
 
-formatAddedSchedulesは追加分を開始日時順に並べ、終了済みを除外し、項目単位で重複を除いて各5件を選ぶ。isVisibleは終了日20300101を常設として表示対象に含め、formatChangesにも同じ判定を使う。予定は開始日、開催中は終了日でまとめる。常設は開始日でまとめて「常設」と明記し、架空の開催日数は付けない。missionはsaleのIDから独立分類し、getStageNameのpreserveLineBreaksオプションで原文の<br>を改行へ変換する。続きの行も字下げし、複数行のmissionを1件として数える。通常のsaleコマンドは従来の表示を保つ。コードフェンスを除去し、字下げを含む各項目を244文字までに制限してDiscordの2000文字以内に収める。skdHistoryUrlは旧lib/discord.jsと同じtab=history、tsv=<最新のraw時刻>、type=allを生成する。
+formatAddedSchedulesは追加分を開始日時順に並べ、終了済みを除外し、項目単位で重複を除く。isVisibleは終了日20300101を常設として表示対象に含め、formatChangesにも同じ判定を使う。予定は開始日、開催中は終了日でまとめる。常設は開始日でまとめて「常設」と明記し、架空の開催日数は付けない。missionはsaleのIDから独立分類し、getStageNameのpreserveLineBreaksオプションで原文の<br>を改行へ変換する。続きの行も字下げし、複数行のmissionを1件として数える。通常のsaleコマンドは従来の表示を保つ。コードフェンスを除去し、字下げを含む各項目を244文字までに制限する。formatCodeBlocksは項目を途中で切らず、同じ種類の見出しを繰り返してDiscordの2000文字以内に分割する。skdHistoryUrlは旧lib/discord.jsと同じtab=history、tsv=<最新のraw時刻>、type=allを生成する。
 
-追加がない種類は省き、formatChangesが4種類の日時・必要バージョン・上限バージョンの変更を1つのコードブロックへまとめる。表示順はgatya、sale、item、mission、上限は全体で5件。項目ごとに変更前→変更後を示す。変更項目は名前120文字・全体360文字までとし、2000文字以内に収める。変更がない場合は欄ごと省き、最後にKBCリンクを付ける。
+追加がない種類は省く。gatya、sale、itemは全項目を表示し、missionだけ先頭5件と残りのIDをmissionFootersの「その他〇件(ID,ID,ID)」で表示する。formatChangesは4種類の日時・必要バージョン・上限バージョンの変更をまとめて全件表示し、2000文字を超える場合は分割する。表示順はgatya、sale、item、mission、変更、KBC。変更項目は名前120文字・全体360文字までとし、変更がない場合は欄ごと省く。
 
 ## 履歴コマンド
 
@@ -26,11 +26,11 @@ command.tsは見出しと本文を順番に実行チャンネルへ返す。form
 
 新しいphase=readyはsource { beforeRef, afterRef, files }を持つ。filesのキーは今回のtypesと一致し、pathとhashを持つ。既存detected/types/ad/noticeの入力契約は維持する。
 
-createDetectionServiceは速報と種類の編集を先に完了し、その後詳細を作る。detailContentsに追加分・変更欄・リンクの1〜6本文をGitHubへ確定し、各チャンネルのfollowUpsへ各投稿の状態・ID・本文を記録する。followUpsの件数は確定本文の件数と一致させる。旧形式の5本文も読み込める。同じ通知IDで再受信しても本文の再計算・送信済み投稿の再投稿をしない。
+createDetectionServiceは速報と種類の編集を先に完了し、その後詳細を一度だけ作る。detailContentsに追加分・変更欄・リンクの1〜128本文をGitHubへ確定し、各チャンネルのfollowUpsへ各投稿の状態・ID・本文を記録する。followUpsの件数は確定本文の件数と一致させる。旧形式の5本文も読み込める。同じ通知IDで再受信しても本文の再計算・送信済み投稿の再投稿をしない。複数トークは同じdetailContentsを共有し、TSVと名前表の取得は更新ごとに一回だけ行う。
 
 各投稿の直前に、GitHubの最新状態がpendingであることを確認し、一意なattemptIdとattemptingをSHA照合付きで保存する。同時に別処理が同じ投稿を取得しても、同じ内容のPUT成功確認を自分の送信権取得と誤認しない。結果保存では対象の投稿だけを更新する。
 
-送信結果不明は409 reconciliation-required。後続カテゴリとリンクを保留する。未送信を確認してpendingへ戻すか、Discordで確認したmessageIdをsentへ採用してから、同じreadyを再送する。解析失敗・GitHub障害は503として同じIDで再試行する。
+送信結果不明の投稿はattemptingのまま保持して再投稿しない。後続のpending投稿は同じトークでも他のトークでも独立して順番に進める。保存や取得の一時障害でpendingが残った場合は503を優先して同じIDを再試行し、送信可能なpendingがなくなり結果不明の投稿だけが残れば409 reconciliation-requiredを返す。未送信を確認してpendingへ戻すか、Discordで確認したmessageIdをsentへ採用してから、同じreadyを再送する。
 
 ## 取得側との接続
 
@@ -41,10 +41,12 @@ KBC-rakv0-eventのlib/skd-notifications.jsがstate/skd-notifications.jsonへ通�
 ## 検証
 
 - npm test / npm run typecheck / git diff --check。
-- tests/skd.test.js: 追加・変更の判別、4分類・追加各5件・変更合計5件、常設の追加・変更、空の種類の省略、missionの改行、前回rawの選択と同一パーサーでの比較、commit固定・ハッシュ不一致・履歴欠落の拒否。
-- tests/push.test.js: 再試行・再起動、送信結果不明時の停止、独立した受信処理間の送信権取得。
+- tests/skd.test.js: 追加・変更の判別、4分類・missionだけ5件と残りのID、その他3種類と変更の全件表示・分割、常設の追加・変更、空の種類の省略、missionの改行、前回rawの選択と同一パーサーでの比較、commit固定・ハッシュ不一致・履歴欠落の拒否。
+- tests/push.test.js: 再試行・再起動、結果不明投稿の保持と後続の配送、複数トークでの本文共有、独立した受信処理間の送信権取得。
 - 実データのgatya_1788844575/4576、sale_1788844575/4576、item_1788844575/4576はそれぞれ同一内容。7f9677bから16e839cまでの更新を実際のTSVと名前表で解析し、4分類とKBCリンクを生成して確認した。Discordへの試験投稿はしていない。
 
 2026-09-11の表示漏れ調査: 2026/04/01のsale_1775023632.tsvは、直前のsale_1774926317.tsvに対してID 114「新バージョン告知ポップアップ」が1件追加されていた。差分解析では検出できていたが、終了日20300101を常設として除外する表示条件で消えていた。通知とo.skdの共通表示を修正し、実際の外部取得を使う`o.skd 2026 04 01`相当の実行で、見出し「スケジュール更新」、TSV保存時刻15:07:12、ID 114の表示を確認した。
 
-取得側commit 0e13fb3d4ff7c91acd59c68800f2ff271a7e0318のraw全81ファイルについて、データ行数と解析件数が一致した。100秒単位の全37更新を実データと名前表で再計算し、各返信が2000文字以内であることを確認した。初回保存分を除く22ファイル（gatya 3、sale 11、item 8）に常設の追加・変更があり、同じ除外条件の影響を受けていた。修正後も追加・変更欄が空なのは2026/04/24のみで、この回はsaleとitemのID 33000に関する行が各1行削除されただけだった。各5件と「その他〇件」の上限は維持する。
+取得側commit 0e13fb3d4ff7c91acd59c68800f2ff271a7e0318のraw全81ファイルについて、データ行数と解析件数が一致した。100秒単位の全37更新を実データと名前表で再計算し、各返信が2000文字以内であることを確認した。初回保存分を除く22ファイル（gatya 3、sale 11、item 8）に常設の追加・変更があり、同じ除外条件の影響を受けていた。修正後も追加・変更欄が空なのは2026/04/24のみで、この回はsaleとitemのID 33000に関する行が各1行削除されただけだった。当時の各5件と「その他〇件」の上限は維持した。
+
+2026-09-15の配送欠落調査: 9/14のready記録では3種類のrawが揃い、gatya・sale・item・mission・KBCの5本文が保存済みだった。2トークの一方はgatyaがattempting、後続がpending、もう一方は最初の3本文がsentでmissionとKBCがpendingだった。従来はattemptingでそのトークの処理を即中断し、別トークに一時障害があっても409を優先したため、取得側が更新をheldに移して残りのpendingを再試行できなかった。service.tsはattemptingを飛ばして後続を試し、一時障害が残る間は503、結果不明だけ残ったら409を返す。既存の詳細本文は再計算せず共有し、取得・解析回数をトーク数に比例させない。保存済みreadyの固定rawを新コードで再解析した読み取り専用確認では、missionの省略ID 9777、9778、9779を「その他3件(9777,9778,9779)」にできることを確認した。

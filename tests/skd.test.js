@@ -44,36 +44,51 @@ test("date and version replacements are combined as five changes while retained 
     changes: { gatya: gatya.changes, sale: sale.changes, item: item.changes },
   }, now, "https://example.com/history");
   assert.deepEqual(parts.map(part => part.split("\n")[0]), ["**sale**", "**変更**", "**KBC**"]);
-  assert.equal((parts[1].match(/^\[(gatya|sale|item|mission)\]/gm) || []).length, 5);
+  assert.equal((parts[1].match(/^\[(gatya|sale|item|mission)\]/gm) || []).length, 6);
   for (const type of ["gatya", "sale", "item", "mission"]) assert.ok(parts[1].includes(`[${type}]`));
   assert.match(parts[1], /2026\/09\/11 11:00 → 2026\/09\/12 11:00/);
   assert.match(parts[1], /必要Ver: 150600 → 150700/);
-  assert.match(parts[1], /その他1件/);
+  assert.doesNotMatch(parts[1], /その他/);
   assert.ok(parts.every(part => part.length <= 2000));
+  const many = Array.from({ length: 30 }, (_, index) => ({
+    before: { ...oldSale, stageIds: [200 + index] }, after: { ...oldSale, header: nextHeader, stageIds: [200 + index] },
+  }));
+  const split = formatAddedSchedules({ sale: { sale: document([]), saleNames: new Map(), allDayEventNames: new Map(), missionNames: new Map(), cardSettingStageIds: [] },
+    changes: { sale: many } }, now, "https://example.com/history");
+  assert.ok(split.filter(part => part.startsWith("**変更**")).length > 1);
+  assert.equal((split.join("\n").match(/^\[sale\]/gm) || []).length, 30);
+  assert.equal(split.at(-1).split("\n")[0], "**KBC**");
+  assert.ok(split.every(part => part.length <= 2000));
   assert.deepEqual(formatAddedSchedules({}, now, "https://example.com/history"), ["**KBC**\n<https://example.com/history>"]);
 });
 
-test("four separate code blocks each show at most five rows, then the KBC link", () => {
-  const ids = Array.from({ length: 7 }, (_, n) => n + 1);
+test("full additions split into ordered blocks while mission limits names and lists omitted IDs", () => {
+  const ids = Array.from({ length: 60 }, (_, n) => n + 1);
   const maps = { R: new Map(ids.map(id => [id, 10])), E: new Map(), N: new Map() };
-  const names = { R: new Map([[10, "ガチャ"]]), E: new Map(), N: new Map() };
+  const names = { R: new Map([[10, "ガチャ".repeat(30)]]), E: new Map(), N: new Map() };
   const parts = formatAddedSchedules({
     gatya: { gacha: document([{ header: { ...header, gachaType: 1 }, gachas: ids.map(id => ({ id, flags: 4, guaranteed: true })) }]), seriesMappings: maps, shortSeriesNames: names },
     sale: { sale: document([{ header, timeBlocks: [], stageIds: ids.flatMap(id => [100 + id, 8000 + id]) }]), saleNames: new Map(), allDayEventNames: new Map(), missionNames: new Map([[8001, "ミッション<br>説明\r\n進行状況,別項目"]]), cardSettingStageIds: [] },
     item: { item: document(ids.map(id => ({ header, gift: { giftType: id, giftAmount: 1, title: "アイテム```" } }))), itemNames: new Map(), saleNames: new Map() },
   }, new Date("2026-09-10T00:00:00Z"), "https://example.com/history");
-  assert.deepEqual(parts.map(p => p.split("\n")[0]), ["**gatya**", "**sale**", "**item**", "**mission**", "**KBC**"]);
-  for (const content of parts.slice(0, 4)) {
+  assert.equal(parts.at(-1).split("\n")[0], "**KBC**");
+  for (const content of parts.slice(0, -1)) {
     assert.doesNotMatch(content, /🟠/);
-    assert.equal((content.match(/^    \d+ /gm) || []).length, 5);
     assert.equal((content.match(/```/g) || []).length, 2);
-    assert.match(content, /その他2件/);
     assert.ok(content.length <= 2000);
   }
-  assert.doesNotMatch(parts[1], /8001/);
-  assert.match(parts[3], /8001 ミッション\n    説明\n    進行状況 <7d>/);
-  assert.doesNotMatch(parts[3], /<br>|別項目/);
-  assert.match(parts[4], /https:\/\/example.com\/history/);
+  const sections = name => parts.filter(part => part.startsWith(`**${name}**`));
+  assert.ok(sections("gatya").length > 1);
+  for (const name of ["gatya", "sale", "item"]) {
+    assert.equal((sections(name).join("\n").match(/^    \d+ /gm) || []).length, 60);
+    assert.doesNotMatch(sections(name).join("\n"), /その他/);
+  }
+  const missions = sections("mission").join("\n");
+  assert.equal((missions.match(/^    \d+ /gm) || []).length, 5);
+  assert.match(missions, /その他55件\(8006,8007,.*8060\)/);
+  assert.match(missions, /8001 ミッション\n    説明\n    進行状況 <7d>/);
+  assert.doesNotMatch(missions, /<br>|別項目/);
+  assert.match(parts.at(-1), /https:\/\/example.com\/history/);
 });
 
 test("permanent additions and changes remain visible, including the April 1 popup", () => {

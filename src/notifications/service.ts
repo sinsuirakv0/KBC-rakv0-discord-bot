@@ -1,4 +1,4 @@
-import { StorageError } from "../storage/types";
+﻿import { StorageError } from "../storage/types";
 import { createHash, randomUUID } from "node:crypto";
 import { formatDetection } from "./formatters";
 import { NotificationStore } from "./store";
@@ -23,9 +23,11 @@ export function createDetectionService(store: NotificationStore, transport: Noti
           if (record.event.source && JSON.stringify(record.event.source) !== JSON.stringify(event.source)) throw new Error("Schedule source mismatch");
           record.event.source = event.source;
           record.event.phase = "ready";
+          record.event.types = event.types;
+        } else {
+          const knownTypes = record.event.types;
+          record.event.types = scheduleTypes.filter(type => knownTypes.includes(type) || event.types.includes(type));
         }
-        const knownTypes = record.event.types;
-        record.event.types = scheduleTypes.filter(type => knownTypes.includes(type) || event.types.includes(type));
       }
       return record;
     });
@@ -74,23 +76,32 @@ export function createDetectionService(store: NotificationStore, transport: Noti
       if (current.event.source) {
         const contents = await getDetails();
         delivery.followUps ??= contents.map(() => ({ status: "pending" as const }));
+        let held = false;
+        let failure: unknown;
         for (const [index, detail] of contents.entries()) {
           const part = delivery.followUps[index];
           if (part.status === "sent") continue;
-          if (part.status === "attempting") throw new StorageError("reconciliation-required");
-          part.status = "attempting";
-          part.attemptId = randomUUID();
-          await checkpoint(index, true);
-          const nonce = createHash("sha256").update(`${event.eventId}:${delivery.channelId}:detail:${index}`).digest("hex").slice(0, 24);
-          part.messageId = await transport.send(delivery.channelId, detail, nonce);
-          part.content = detail;
-          part.status = "sent";
-          await checkpoint(index);
+          if (part.status === "attempting") { held = true; continue; }
+          try {
+            part.status = "attempting";
+            part.attemptId = randomUUID();
+            await checkpoint(index, true);
+            const nonce = createHash("sha256").update(`${event.eventId}:${delivery.channelId}:detail:${index}`).digest("hex").slice(0, 24);
+            part.messageId = await transport.send(delivery.channelId, detail, nonce);
+            part.content = detail;
+            part.status = "sent";
+            await checkpoint(index);
+          } catch (error) {
+            failure ??= error;
+            if (part.status === "attempting") held = true;
+          }
         }
+        if (failure) throw failure;
+        if (held) throw new StorageError("reconciliation-required");
       }
     }));
-    if (outcomes.some(result => result.status === "rejected" && result.reason instanceof StorageError && result.reason.code === "reconciliation-required")) throw new StorageError("reconciliation-required");
-    if (outcomes.some(result => result.status === "rejected")) throw new Error("Notification delivery failed");
+    if (outcomes.some(result => result.status === "rejected" && !(result.reason instanceof StorageError && result.reason.code === "reconciliation-required"))) throw new Error("Notification delivery failed");
+    if (outcomes.some(result => result.status === "rejected")) throw new StorageError("reconciliation-required");
   }
 
   return (event: DetectionEvent): Promise<void> => {

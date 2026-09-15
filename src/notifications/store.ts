@@ -1,5 +1,6 @@
 ﻿import { createHash } from "node:crypto";
 import { JsonStore } from "../storage/json-store";
+import { skdMaxDetailMessages } from "../config/skd";
 import { GuildSettingsStore } from "../storage/guild-settings";
 import { StorageError } from "../storage/types";
 import { parseDetectionEvent } from "./parsers";
@@ -22,7 +23,7 @@ function parseRecord(value: unknown): EventRecord {
       || !validMessage(item) || (item.followUps !== undefined && (!Array.isArray(item.followUps)
         || item.followUps.length !== record.detailContents?.length || item.followUps.some(part => !validMessage(part))))) throw new StorageError("invalid-delivery");
   }
-  if (record.detailContents !== undefined && (!Array.isArray(record.detailContents) || record.detailContents.length < 1 || record.detailContents.length > 6
+  if (record.detailContents !== undefined && (!Array.isArray(record.detailContents) || record.detailContents.length < 1 || record.detailContents.length > skdMaxDetailMessages
     || record.detailContents.some(content => typeof content !== "string" || content.length > 2000))) throw new StorageError("invalid-details");
   return record;
 }
