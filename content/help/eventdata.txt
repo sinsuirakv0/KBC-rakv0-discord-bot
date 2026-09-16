@@ -1,14 +1,15 @@
 ﻿```o.eventdata
 JP版gatya・sale・itemのJWT付き公式URLを表示します。
 
-o.eventdata all [jp|en|kr|tw] [kbc]
+o.eventdata all [jp|en|kr|tw] [enc] [kbc]
 gatya・sale・item・notice・adの全URLを表示します。
 国を省略した場合はjpです。kbcを付けるとKBC URLへ切り替えます。
 
-o.eventdata <sale|gatya|item|ad|notice> [jp|en|kr|tw] [kbc]
+o.eventdata <sale|gatya|item|ad|notice> [jp|en|kr|tw] [enc] [kbc]
 指定データのURLを表示します。国を省略した場合はjpです。
 jaはjp、koはkr、popup_notice・placementはnoticeとして扱います。
 kbcを付けると、JWT不要のKBC URLを表示します。
+encとkbcを付けると、暗号化データを閲覧できるKBC URLを表示します。
 URLは種類ごとに次の形式で表示します。
 [gatya]
 URL
@@ -17,12 +18,12 @@ o.eventdata <種類> [国] <tsv|file> [enc] [kbc]
 データをファイルとして添付します。tsvとfileは同じ動作です。
 sale・gatya・itemはTSV、ad・noticeはJSONで送信します。
 encを付けるとゲーム互換DATへ暗号化し、対応するハッシュ名で送信します。
-encはtsvまたはfileと一緒に指定してください。
+encはtsv・fileまたはkbcと一緒に指定してください。
 
 例:
 o.eventdata sale
 o.eventdata all en kbc
-o.eventdata gatya en kbc
+o.eventdata gatya en enc kbc
 o.eventdata item tw file
 o.eventdata notice kr tsv enc kbc
 ```

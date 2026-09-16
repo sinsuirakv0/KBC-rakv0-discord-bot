@@ -61,7 +61,7 @@ export function createEventDataCommand(
             ? new Map(
                 ALL_LINK_TYPES.map((type) => [
                   type,
-                  buildKbcEventDataUrl(type, request.country),
+                  buildKbcEventDataUrl(type, request.country, request.encrypted),
                 ]),
               )
             : await dependencies.dataSource.fetchOfficialLinks(
@@ -80,7 +80,14 @@ export function createEventDataCommand(
             formatLinks(
               [request.type],
               new Map([
-                [request.type, buildKbcEventDataUrl(request.type, request.country)],
+                [
+                  request.type,
+                  buildKbcEventDataUrl(
+                    request.type,
+                    request.country,
+                    request.encrypted,
+                  ),
+                ],
               ]),
             ),
           );

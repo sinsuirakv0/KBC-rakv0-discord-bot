@@ -31,7 +31,14 @@ function context(output) {
 test("eventdata parses type, country aliases, file aliases and options", () => {
   assert.deepEqual(parseEventDataRequest([]), { kind: "all-links" });
   assert.deepEqual(parseEventDataRequest(["all", "en", "kbc"]), {
-    kind: "all", country: "en", kbc: true,
+    kind: "all", country: "en", encrypted: false, kbc: true,
+  });
+  assert.deepEqual(parseEventDataRequest(["all", "tw", "enc", "kbc"]), {
+    kind: "all", country: "tw", encrypted: true, kbc: true,
+  });
+  assert.deepEqual(parseEventDataRequest(["sale", "enc", "kbc"]), {
+    kind: "selected", type: "sale", country: "jp",
+    file: false, encrypted: true, kbc: true,
   });
   assert.deepEqual(parseEventDataRequest(["placement", "ko", "file", "enc", "kbc"]), {
     kind: "selected", type: "notice", country: "kr",
@@ -105,13 +112,14 @@ test("eventdata command formats official links, all links, KBC links, files and 
   );
 
   const allKbc = createOutput();
-  await command.execute(context(allKbc), ["all", "tw", "kbc"]);
+  await command.execute(context(allKbc), ["all", "tw", "enc", "kbc"]);
   assert.match(allKbc.messages[0], /^\[gatya\]\nhttps:\/\/kbc-rakv0\.vercel\.app\//);
-  assert.match(allKbc.messages[0], /\n\n\[ad\]\n.*battlecats\/adcontrol\.json$/);
+  assert.match(allKbc.messages[0], /gatya\.tsv\?enc=1/);
+  assert.match(allKbc.messages[0], /\n\n\[ad\]\n.*battlecats\/adcontrol\.json\?enc=1$/);
 
   const kbc = createOutput();
-  await command.execute(context(kbc), ["notice", "en", "kbc"]);
-  assert.equal(kbc.messages[0], "[notice]\nhttps://kbc-rakv0.vercel.app/nyanko-events/control/placement/battlecatsen/event.json");
+  await command.execute(context(kbc), ["notice", "en", "enc", "kbc"]);
+  assert.equal(kbc.messages[0], "[notice]\nhttps://kbc-rakv0.vercel.app/nyanko-events/control/placement/battlecatsen/event.json?enc=1");
 
   const file = createOutput();
   await command.execute(context(file), ["gatya", "tw", "file", "enc", "kbc"]);

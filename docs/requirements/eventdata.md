@@ -6,29 +6,31 @@
 
 ```text
 o.eventdata
-o.eventdata all [国] [kbc]
+o.eventdata all [国] [enc] [kbc]
 o.eventdata <種類> [国] [tsv|file] [enc] [kbc]
 ```
 
 - 種類は`sale`、`gatya`、`item`、`ad`、`notice`。
-- `all`は全種類のURLを表示する特別指定。国と`kbc`だけを併用できる。
+- `all`は全種類のURLを表示する特別指定。国と`kbc`を併用でき、`enc`は`kbc`との併用時だけ指定できる。
 - `popup_notice`と`placement`は`notice`の別名。
 - 国は`jp`、`en`、`kr`、`tw`。`ja`は`jp`、`ko`は`kr`の別名。省略時は`jp`。
 - `tsv`と`file`は同じ添付指定。種類・国より後ろで指定し、sale・gatya・itemはTSV、ad・noticeはJSONとして送る。
-- `enc`は`tsv`または`file`との併用時だけ使用でき、添付内容をゲーム互換DATへ暗号化する。
+- `enc`は`tsv`、`file`または`kbc`との併用時だけ使用できる。添付時は内容をゲーム互換DATへ暗号化し、添付なしの`kbc`では暗号化データを返すURLを表示する。
 - `kbc`は取得元または表示URLを、公式URLからKBC URLへ切り替える。
-- 国・各オプションの重複、不明な引数、`tsv`・`file`なしの`enc`は不正指定とする。
+- 国・各オプションの重複、不明な引数、`tsv`・`file`・`kbc`なしの`enc`は不正指定とする。
 - サーバー内では全ユーザーが利用でき、DMでは反応しない。
 
 ## URL表示
 
 引数なしではJP版のgatya・sale・itemについて、1個の一時JWTを共有したJWT付き公式URLを3件表示する。ad・noticeは含めない。
 
-`all`ではgatya・sale・item・notice・adの順に全5件を表示する。国を省略した場合はJPとし、`kbc`を併用できる。`tsv`、`file`、`enc`は併用できない。
+`all`ではgatya・sale・item・notice・adの順に全5件を表示する。国を省略した場合はJPとし、`kbc`を併用できる。`enc`は`kbc`との併用時だけ指定でき、全URLへ`enc=1`を付ける。`tsv`と`file`は併用できない。
 
 種類指定・添付指定なしでは、その種類と国のURLを1件表示する。公式sale・gatya・itemでは一時JWTを発行してqueryへ付ける。ad・noticeにはJWTを付けない。
 
 `kbc`指定では、`https://kbc-rakv0.vercel.app/nyanko-events/`以下の公式に近いpathを返す。sale・gatya・itemの拡張子は`.tsv`で、JWT queryは不要とする。
+
+添付指定なしで`enc`と`kbc`を併用した場合は、KBC URLへ`enc=1`を付ける。`kbc`なしの`enc`は、従来どおり`tsv`または`file`が必要となる。
 
 URLは単件・複数件とも、種類を角括弧の見出しにして表示する。複数件の間には空行を入れる。
 

@@ -8,6 +8,7 @@ export type EventDataRequest =
   | {
       kind: "all";
       country: EventDataCountry;
+      encrypted: boolean;
       kbc: boolean;
     }
   | { kind: "invalid" }
