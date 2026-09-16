@@ -6,12 +6,12 @@
 
 ```text
 o.eventdata
-o.eventdata all [国] [enc] [kbc]
+o.eventdata all [国] [tsv|file] [enc] [kbc]
 o.eventdata <種類> [国] [tsv|file] [enc] [kbc]
 ```
 
 - 種類は`sale`、`gatya`、`item`、`ad`、`notice`。
-- `all`は全種類のURLを表示する特別指定。国と`kbc`を併用でき、`enc`は`kbc`との併用時だけ指定できる。
+- `all`は全種類のURL表示または添付を行う特別指定。国、`tsv|file`、`enc`、`kbc`を併用できる。
 - `popup_notice`と`placement`は`notice`の別名。
 - 国は`jp`、`en`、`kr`、`tw`。`ja`は`jp`、`ko`は`kr`の別名。省略時は`jp`。
 - `tsv`と`file`は同じ添付指定。種類・国より後ろで指定し、sale・gatya・itemはTSV、ad・noticeはJSONとして送る。
@@ -24,7 +24,7 @@ o.eventdata <種類> [国] [tsv|file] [enc] [kbc]
 
 引数なしではJP版のgatya・sale・itemについて、1個の一時JWTを共有したJWT付き公式URLを3件表示する。ad・noticeは含めない。
 
-`all`ではgatya・sale・item・notice・adの順に全5件を表示する。国を省略した場合はJPとし、`kbc`を併用できる。`enc`は`kbc`との併用時だけ指定でき、全URLへ`enc=1`を付ける。`tsv`と`file`は併用できない。
+添付指定なしの`all`ではgatya・sale・item・notice・adの順に全5件を表示する。国を省略した場合はJPとし、`kbc`を併用できる。`enc`は`kbc`との併用時だけ指定でき、全URLへ`enc=1`を付ける。
 
 種類指定・添付指定なしでは、その種類と国のURLを1件表示する。公式sale・gatya・itemでは一時JWTを発行してqueryへ付ける。ad・noticeにはJWTを付けない。
 
@@ -62,6 +62,8 @@ https://kbc-rakv0.vercel.app/nyanko-events/control/placement/battlecats/event.js
 ## 添付と暗号化
 
 平文の添付名は`sale.tsv`、`gatya.tsv`、`item.tsv`、`ad.json`、`popup_notice.json`。
+
+`all`へ`tsv`または`file`を付けた場合は、gatya・sale・item・notice・adの順で5ファイルを添付する。`enc`と`kbc`の扱いは単件添付と同じとし、全件の取得に成功してから送信を開始する。
 
 暗号化はAES-128-ECB・PKCS#7を使い、鍵は`MD5("battlecats")`の先頭16文字をUTF-8として扱う。暗号文末尾へ、地域別saltと暗号文から計算したMD5を小文字ASCII 32文字で追加する。地域別saltは`battlecats`、`battlecatsen`、`battlecatskr`、`battlecatstw`。
 

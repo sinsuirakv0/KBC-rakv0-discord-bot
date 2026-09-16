@@ -31,10 +31,13 @@ function context(output) {
 test("eventdata parses type, country aliases, file aliases and options", () => {
   assert.deepEqual(parseEventDataRequest([]), { kind: "all-links" });
   assert.deepEqual(parseEventDataRequest(["all", "en", "kbc"]), {
-    kind: "all", country: "en", encrypted: false, kbc: true,
+    kind: "all", country: "en", file: false, encrypted: false, kbc: true,
   });
   assert.deepEqual(parseEventDataRequest(["all", "tw", "enc", "kbc"]), {
-    kind: "all", country: "tw", encrypted: true, kbc: true,
+    kind: "all", country: "tw", file: false, encrypted: true, kbc: true,
+  });
+  assert.deepEqual(parseEventDataRequest(["all", "en", "file", "enc", "kbc"]), {
+    kind: "all", country: "en", file: true, encrypted: true, kbc: true,
   });
   assert.deepEqual(parseEventDataRequest(["sale", "enc", "kbc"]), {
     kind: "selected", type: "sale", country: "jp",
@@ -51,7 +54,7 @@ test("eventdata parses type, country aliases, file aliases and options", () => {
   for (const args of [
     ["unknown"], ["sale", "fr"], ["sale", "enc"],
     ["sale", "jp", "en"], ["sale", "file", "tsv"], ["sale", "kbc", "kbc"],
-    ["all", "file"], ["all", "enc"], ["all", "jp", "en"],
+    ["all", "file", "tsv"], ["all", "enc"], ["all", "jp", "en"],
   ]) assert.deepEqual(parseEventDataRequest(args), { kind: "invalid" });
 });
 
@@ -92,7 +95,7 @@ test("eventdata command formats official links, all links, KBC links, files and 
     },
     async fetchAttachment(request) {
       requests.push(["file", request]);
-      return { data: Uint8Array.from([1, 2, 3]), filename: "09b1058188348630d98a08e0f731f6bd.dat" };
+      return { data: Uint8Array.from([1, 2, 3]), filename: `${request.type}.dat` };
     },
   };
   const command = createEventDataCommand({ dataSource });
@@ -117,15 +120,33 @@ test("eventdata command formats official links, all links, KBC links, files and 
   assert.match(allKbc.messages[0], /gatya\.tsv\?enc=1/);
   assert.match(allKbc.messages[0], /\n\n\[ad\]\n.*battlecats\/adcontrol\.json\?enc=1$/);
 
+  const allFiles = createOutput();
+  await command.execute(context(allFiles), ["all", "kr", "file", "enc", "kbc"]);
+  assert.deepEqual(allFiles.attachments.map(({ filename }) => filename), [
+    "gatya.dat", "sale.dat", "item.dat", "notice.dat", "ad.dat",
+  ]);
+  assert.deepEqual(
+    requests.slice(2, 7).map(([, request]) => [
+      request.type, request.country, request.file, request.encrypted, request.kbc,
+    ]),
+    [
+      ["gatya", "kr", true, true, true],
+      ["sale", "kr", true, true, true],
+      ["item", "kr", true, true, true],
+      ["notice", "kr", true, true, true],
+      ["ad", "kr", true, true, true],
+    ],
+  );
+
   const kbc = createOutput();
   await command.execute(context(kbc), ["notice", "en", "enc", "kbc"]);
   assert.equal(kbc.messages[0], "[notice]\nhttps://kbc-rakv0.vercel.app/nyanko-events/control/placement/battlecatsen/event.json?enc=1");
 
   const file = createOutput();
   await command.execute(context(file), ["gatya", "tw", "file", "enc", "kbc"]);
-  assert.equal(file.attachments[0].filename, "09b1058188348630d98a08e0f731f6bd.dat");
-  assert.equal(requests[2][0], "file");
-  assert.equal(requests[2][1].kbc, true);
+  assert.equal(file.attachments[0].filename, "gatya.dat");
+  assert.equal(requests[7][0], "file");
+  assert.equal(requests[7][1].kbc, true);
 
   const invalid = createOutput();
   await command.execute(context(invalid), ["sale", "enc"]);

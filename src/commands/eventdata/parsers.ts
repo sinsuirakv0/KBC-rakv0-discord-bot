@@ -28,6 +28,7 @@ export function parseEventDataRequest(args: readonly string[]): EventDataRequest
   if (args[0].toLowerCase() === "all") {
     let country: EventDataCountry = "jp";
     let countrySeen = false;
+    let file = false;
     let encrypted = false;
     let kbc = false;
     for (const raw of args.slice(1)) {
@@ -40,6 +41,9 @@ export function parseEventDataRequest(args: readonly string[]): EventDataRequest
       } else if (value === "kbc") {
         if (kbc) return { kind: "invalid" };
         kbc = true;
+      } else if (value === "tsv" || value === "file") {
+        if (file) return { kind: "invalid" };
+        file = true;
       } else if (value === "enc") {
         if (encrypted) return { kind: "invalid" };
         encrypted = true;
@@ -47,8 +51,8 @@ export function parseEventDataRequest(args: readonly string[]): EventDataRequest
         return { kind: "invalid" };
       }
     }
-    if (encrypted && !kbc) return { kind: "invalid" };
-    return { kind: "all", country, encrypted, kbc };
+    if (encrypted && !file && !kbc) return { kind: "invalid" };
+    return { kind: "all", country, file, encrypted, kbc };
   }
   const type = TYPE_ALIASES[args[0].toLowerCase()];
   if (!type) return { kind: "invalid" };

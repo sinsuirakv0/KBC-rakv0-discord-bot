@@ -1,8 +1,9 @@
 ﻿```o.eventdata
 JP版gatya・sale・itemのJWT付き公式URLを表示します。
 
-o.eventdata all [jp|en|kr|tw] [enc] [kbc]
+o.eventdata all [jp|en|kr|tw] [tsv|file] [enc] [kbc]
 gatya・sale・item・notice・adの全URLを表示します。
+tsvまたはfileを付けると、5種類すべてをファイルとして添付します。
 国を省略した場合はjpです。kbcを付けるとKBC URLへ切り替えます。
 
 o.eventdata <sale|gatya|item|ad|notice> [jp|en|kr|tw] [enc] [kbc]
@@ -23,6 +24,7 @@ encはtsv・fileまたはkbcと一緒に指定してください。
 例:
 o.eventdata sale
 o.eventdata all en kbc
+o.eventdata all jp file enc kbc
 o.eventdata gatya en enc kbc
 o.eventdata item tw file
 o.eventdata notice kr tsv enc kbc

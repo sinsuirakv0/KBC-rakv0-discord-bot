@@ -8,6 +8,7 @@ export type EventDataRequest =
   | {
       kind: "all";
       country: EventDataCountry;
+      file: boolean;
       encrypted: boolean;
       kbc: boolean;
     }

@@ -57,6 +57,24 @@ export function createEventDataCommand(
           return;
         }
         if (request.kind === "all") {
+          if (request.file) {
+            const attachments = await Promise.all(
+              ALL_LINK_TYPES.map((type) =>
+                dependencies.dataSource.fetchAttachment({
+                  kind: "selected",
+                  type,
+                  country: request.country,
+                  file: true,
+                  encrypted: request.encrypted,
+                  kbc: request.kbc,
+                }),
+              ),
+            );
+            for (const attachment of attachments) {
+              await output.sendAttachment(attachment);
+            }
+            return;
+          }
           const links = request.kbc
             ? new Map(
                 ALL_LINK_TYPES.map((type) => [
