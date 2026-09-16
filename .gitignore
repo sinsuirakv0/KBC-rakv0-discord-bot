@@ -28,6 +28,9 @@ archive/
 !tests/tut.test.js
 !docs/requirements/tut.md
 !docs/implementation/tut-command.md
+!tests/eventdata.test.js
+!docs/requirements/eventdata.md
+!docs/implementation/eventdata-command.md
 !tests/ut.test.js
 
 !tests/skd.test.js

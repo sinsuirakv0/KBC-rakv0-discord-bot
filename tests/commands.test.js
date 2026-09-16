@@ -38,13 +38,14 @@ test("registry derives every static command from response text files", () => {
   assert.equal(commandRegistry.resolve("ut")?.name, "ut");
   assert.equal(commandRegistry.resolve("help")?.name, "help");
   assert.equal(commandRegistry.resolve("skd")?.name, "skd");
+  assert.equal(commandRegistry.resolve("eventdata")?.name, "eventdata");
   assert.deepEqual(
     new Set(staticCommandDefinitions.map((command) => command.name)),
     new Set(Object.keys(staticResponses)),
   );
   assert.deepEqual(
     new Set(commandDefinitions.map((command) => command.name)),
-    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "push", "skd"]),
+    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "push", "skd", "eventdata"]),
   );
 });
 
