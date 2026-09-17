@@ -19,13 +19,16 @@ export function formatStageLabel(entry: StageSearchEntry): string {
   return `${entry.displayId} ${entry.displayName}`;
 }
 
-export function formatStageUrl(entry: StageSearchEntry): string {
+export function formatStageUrl(entry: StageSearchEntry, rawMapId = false): string {
+  if (rawMapId && entry.kind === "map") {
+    return `${stDetailPageBaseUrl}?cc=ja&id=${entry.rawMapId}`;
+  }
   const base = `${stDetailPageBaseUrl}?cc=ja&type=${encodeURIComponent(entry.jdbType)}&map=${entry.jdbMap}`;
   return entry.kind === "stage" ? `${base}&stage=${entry.stageIndex}` : base;
 }
 
-export function formatStageDetail(entry: StageSearchEntry): string {
-  return `${formatStageLabel(entry)}\n${formatStageUrl(entry)}`;
+export function formatStageDetail(entry: StageSearchEntry, rawMapId = false): string {
+  return `${formatStageLabel(entry)}\n${formatStageUrl(entry, rawMapId)}`;
 }
 
 function formatHeader(

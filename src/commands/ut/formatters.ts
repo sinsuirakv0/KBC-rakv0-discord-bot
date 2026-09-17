@@ -26,7 +26,7 @@ export function formatMatchLabel(match: UtSearchMatch): string {
 }
 
 export function formatDetailUrl(id: string): string {
-  return `${utDetailPageBaseUrl}/u${id}.html?cc=ja&unit=${id}`;
+  return `${utDetailPageBaseUrl}/u000.html?cc=ja&unit=${id}`;
 }
 
 export function formatDetailResult(match: UtSearchMatch): string {

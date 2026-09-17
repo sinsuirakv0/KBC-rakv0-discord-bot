@@ -1,4 +1,4 @@
-import {
+﻿import {
   IndividualStageEntry,
   StageMapEntry,
   StageNameRows,
@@ -252,6 +252,14 @@ function nameMatches(name: string, words: readonly string[], force: boolean): bo
   return words.every((word) => searchableName.includes(word));
 }
 
+export function findStageById(
+  data: StageSearchData,
+  query: string,
+): StageSearchEntry | undefined {
+  const idKey = parseIdKey(query.trim(), data.displayTypes);
+  return idKey ? data.idIndex.get(idKey) : undefined;
+}
+
 export function searchStages(
   data: StageSearchData,
   query: string,
@@ -260,8 +268,7 @@ export function searchStages(
   const trimmedQuery = query.trim();
   if (!trimmedQuery) return [];
   if (!force) {
-    const idKey = parseIdKey(trimmedQuery, data.displayTypes);
-    const idMatch = idKey ? data.idIndex.get(idKey) : undefined;
+    const idMatch = findStageById(data, trimmedQuery);
     if (idMatch) return [idMatch];
   }
   const words = (force ? trimmedQuery : normalizeStageSearchText(trimmedQuery))

@@ -10,6 +10,7 @@ const {
   buildStageSearchData,
   chapterStageDefinitions,
   normalizeStageSearchText,
+  findStageById,
   searchStages,
 } = require("../dist/commands/st/domain");
 const { formatStageDetail } = require("../dist/commands/st/formatters");
@@ -115,6 +116,7 @@ test("st parses only a leading force flag and searches normalized names and exac
   assert.equal(searchStages(data, "1000-0", false)[0].displayId, "S000-000");
   assert.equal(searchStages(data, "2_inv0", false)[0].rawMapId, 23000);
   assert.equal(searchStages(data, "23000", false)[0].displayId, "2_Inv000");
+  assert.equal(findStageById(data, "1000").displayId, "S000");
   assert.equal(searchStages(data, "販売別名", false)[0].displayName, "月曜ステージ（旧）");
   assert.equal(searchStages(data, "青い別名", false)[0].displayName, "青い別名");
   assert.equal(searchStages(data, "赤い 青い", false).length, 0);
@@ -124,9 +126,23 @@ test("st parses only a leading force flag and searches normalized names and exac
     formatStageDetail(searchStages(data, "S0-0", false)[0]),
     "S000-000 ネコ－Ａ\nhttps://jarjarblink.github.io/JDB/map.html?cc=ja&type=S&map=0&stage=0",
   );
+  assert.equal(
+    formatStageDetail(findStageById(data, "1000"), true),
+    "S000 月曜ステージ（旧）\nhttps://jarjarblink.github.io/JDB/map.html?cc=ja&id=1000",
+  );
 });
 
 test("st uses the ut-compatible count boundaries, selection, and serialized paging", async () => {
+  const idOutput = createFakeOutput();
+  await createStCommand({ dataSource: { async fetchSearchData() { return searchFixture(); } } })
+    .execute(commandContext(idOutput), ["1000"]);
+  assert.match(idOutput.messages[0].content, /map\.html\?cc=ja&id=1000$/);
+
+  const stageIdOutput = createFakeOutput();
+  await createStCommand({ dataSource: { async fetchSearchData() { return searchFixture(); } } })
+    .execute(commandContext(stageIdOutput), ["1000-0"]);
+  assert.match(stageIdOutput.messages[0].content, /type=S&map=0&stage=0$/);
+
   const fourOutput = createFakeOutput(["2️⃣"]);
   await createStCommand({ dataSource: { async fetchSearchData() { return repeatedData(4); } } })
     .execute(commandContext(fourOutput), ["共通"]);

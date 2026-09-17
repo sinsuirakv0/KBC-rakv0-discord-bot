@@ -7,7 +7,7 @@ import { fileCommandHelpSource } from "../help/data-source";
 import { CommandHelpSource } from "../help/types";
 import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../types";
 import { remoteStDataSource } from "./data-source";
-import { searchStages } from "./domain";
+import { findStageById, searchStages } from "./domain";
 import {
   formatStageDetail,
   formatStageLabel,
@@ -172,7 +172,10 @@ export function createStCommand(dependencies: StCommandDependencies): CommandDef
         return;
       }
       if (matches.length <= 3) {
-        for (const match of matches) await output.send(formatStageDetail(match));
+        const idMatch = request.force ? undefined : findStageById(data, request.query);
+        for (const match of matches) {
+          await output.send(formatStageDetail(match, idMatch === match && match.kind === "map"));
+        }
         return;
       }
       if (matches.length <= ST_NUMBER_EMOJIS.length) {
