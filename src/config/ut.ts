@@ -1,6 +1,5 @@
 ﻿export interface UtDataUrls {
   characterIndex: string;
-  characterAssets: string;
   unitBuy: string;
   siteDataBase: string;
 }
@@ -10,7 +9,6 @@ const siteDataBase =
 
 export const utDataUrls: UtDataUrls = {
   characterIndex: `${siteDataBase}/character-index.json`,
-  characterAssets: `${siteDataBase}/character-assets.json`,
   unitBuy: `${siteDataBase}/Data/unitbuy.csv`,
   siteDataBase,
 };

@@ -10,7 +10,9 @@ export function parseTutRequest(args: readonly string[]): TutRequest {
 
   let force = false;
   let origin = false;
+  let file = false;
   const queryParts: string[] = [];
+  const fileParts: string[] = [];
   const motionParts: string[] = [];
   let motion = false;
   for (const argument of args) {
@@ -19,14 +21,21 @@ export function parseTutRequest(args: readonly string[]): TutRequest {
       force = true;
     } else if (normalized === "origin") {
       origin = true;
+    } else if (normalized === "file" && !file) {
+      file = true;
     } else if (normalized === "motion" && !motion) {
       motion = true;
     } else {
-      (motion ? motionParts : queryParts).push(argument);
+      (motion ? motionParts : file ? fileParts : queryParts).push(argument);
     }
   }
   const query = queryParts.join(" ").trim();
   if (!query) return { kind: "help" };
+  if (file) {
+    return !origin && !motion && fileParts.length === 0
+      ? { kind: "search", query, force, origin: false, file: true }
+      : { kind: "invalid-file" };
+  }
   if (!motion) return { kind: "search", query, force, origin };
   const parsed = parseMotionArguments(motionParts);
   if (!parsed || origin) return { kind: "invalid-motion" };

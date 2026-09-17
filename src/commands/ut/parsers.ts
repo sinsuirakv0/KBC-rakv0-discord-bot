@@ -1,6 +1,4 @@
 ﻿import {
-  CharacterAssets,
-  CharacterAssetUnit,
   CharacterIndex,
   CharacterUnit,
   UnitBuy,
@@ -9,7 +7,6 @@
   UtOriginRequest,
   UtRequest,
 } from "./types";
-import { buildAssetPath, isSafeRelativePath } from "./domain";
 import { parseMotionArguments as parseMotionOptions } from "../shared/motion/parser";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,12 +59,19 @@ export function parseUtRequest(args: readonly string[]): UtRequest {
 
   const normalized = args.map((value) => value.toLowerCase());
   const originIndex = normalized.indexOf("origin");
+  const fileIndex = normalized.indexOf("file");
   const motionIndex = normalized.indexOf("motion");
-  if (originIndex !== -1 && motionIndex !== -1) {
-    return motionIndex < originIndex ? { kind: "invalid-motion" } : { kind: "invalid-origin" };
+  const operations = [originIndex, fileIndex, motionIndex].filter((index) => index !== -1);
+  if (operations.length > 1) {
+    const firstIndex = Math.min(...operations);
+    return firstIndex === fileIndex
+      ? { kind: "invalid-file" }
+      : firstIndex === motionIndex
+        ? { kind: "invalid-motion" }
+        : { kind: "invalid-origin" };
   }
 
-  const operationIndex = originIndex === -1 ? motionIndex : originIndex;
+  const operationIndex = operations[0] ?? -1;
   const queryArguments = operationIndex === -1 ? args : args.slice(0, operationIndex);
   const force = queryArguments.some((value) => value.toLowerCase() === "-f");
   const query = queryArguments
@@ -76,13 +80,30 @@ export function parseUtRequest(args: readonly string[]): UtRequest {
     .trim();
 
   if (operationIndex === -1) return { kind: "search", query, force };
-  if (!query) return originIndex === -1 ? { kind: "invalid-motion" } : { kind: "invalid-origin" };
+  if (!query) {
+    return fileIndex !== -1
+      ? { kind: "invalid-file" }
+      : motionIndex !== -1
+        ? { kind: "invalid-motion" }
+        : { kind: "invalid-origin" };
+  }
 
   if (motionIndex !== -1) {
     const motion = parseMotionArguments(args.slice(motionIndex + 1));
     return motion
       ? { kind: "search", query, force, motion }
       : { kind: "invalid-motion" };
+  }
+
+  if (fileIndex !== -1) {
+    const fileArguments = args.slice(fileIndex + 1).map((value) => value.toLowerCase());
+    if (fileArguments.length === 0) {
+      return { kind: "search", query, force, file: {} };
+    }
+    const form = fileArguments[0];
+    return fileArguments.length === 1 && ["f", "c", "s", "u"].includes(form)
+      ? { kind: "search", query, force, file: { form: form as UtForm } }
+      : { kind: "invalid-file" };
   }
 
   const origin = parseOriginArguments(args.slice(originIndex + 1));
@@ -154,75 +175,4 @@ export function parseCharacterIndex(value: unknown): CharacterIndex {
     throw new Error("Invalid character index: units must be a non-empty array");
   }
   return { units: value.units.map(parseCharacterUnit) };
-}
-
-function parsePathTemplates(value: unknown): Readonly<Record<string, string>> {
-  if (!isRecord(value)) {
-    throw new Error("Invalid character assets: pathTemplates must be an object");
-  }
-  const templates: Record<string, string> = {};
-  for (const [code, template] of Object.entries(value)) {
-    if (!/^[a-z][a-z0-9]*$/i.test(code) || typeof template !== "string") {
-      throw new Error("Invalid character assets: pathTemplates entry is invalid");
-    }
-    if (!isSafeRelativePath(template)) {
-      throw new Error(`Invalid character assets: unsafe template ${code}`);
-    }
-    templates[code] = template;
-  }
-  for (const code of ["i", "un", "uu", "g"]) {
-    const template = templates[code];
-    if (!template?.includes("{id}") || !template.includes("{suffix}")) {
-      throw new Error(`Invalid character assets: required template ${code} is invalid`);
-    }
-  }
-  return templates;
-}
-
-function parseAssetUnit(
-  value: unknown,
-  index: number,
-  pathTemplates: Readonly<Record<string, string>>,
-): CharacterAssetUnit {
-  if (!isRecord(value) || value.id !== expectedUnitId(index)) {
-    throw new Error(`Invalid character assets: unit ${index} has an invalid id`);
-  }
-  const suffixes: Record<string, readonly string[]> = {};
-  for (const [code, rawSuffixes] of Object.entries(value)) {
-    if (code === "id") continue;
-    if (code === "omit") {
-      if (!Array.isArray(rawSuffixes) || rawSuffixes.some((item) => typeof item !== "string")) {
-        throw new Error(`Invalid character assets: unit ${value.id} omit is invalid`);
-      }
-      continue;
-    }
-    if (!pathTemplates[code] || !Array.isArray(rawSuffixes)) {
-      throw new Error(`Invalid character assets: unit ${value.id} code ${code} is invalid`);
-    }
-    if (
-      rawSuffixes.some((suffix) => typeof suffix !== "string" || !suffix) ||
-      new Set(rawSuffixes).size !== rawSuffixes.length
-    ) {
-      throw new Error(`Invalid character assets: unit ${value.id} suffixes are invalid`);
-    }
-    const strings = rawSuffixes as string[];
-    for (const suffix of strings) {
-      buildAssetPath(pathTemplates[code], value.id, suffix);
-    }
-    suffixes[code] = strings;
-  }
-  return { id: value.id, suffixes };
-}
-
-export function parseCharacterAssets(value: unknown): CharacterAssets {
-  if (!isRecord(value) || !Array.isArray(value.units) || value.units.length === 0) {
-    throw new Error("Invalid character assets: units must be a non-empty array");
-  }
-  const pathTemplates = parsePathTemplates(value.pathTemplates);
-  return {
-    pathTemplates,
-    units: value.units.map((unit, index) =>
-      parseAssetUnit(unit, index, pathTemplates),
-    ),
-  };
 }

@@ -1,14 +1,13 @@
 ﻿# o.ut 仕様
 
-このコマンドは、味方キャラを名前・別称・IDから検索し、外部詳細ページ、指定した原寸画像、モーション画像・動画を表示するためのコマンドである。
+このコマンドは、味方キャラを名前・別称・IDから検索し、外部詳細ページ、関連する元ファイル、モーション画像・動画を表示するためのコマンドである。
 
 ## データ取得元
 
 - 名前・説明・別称は、`KBC-rakv0-assets`の`jp/sitedata/character-index.json`から取得する。
   - `https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/main/jp/sitedata/character-index.json`
-- 画像の存在確認とパス復元には、同リポジトリの`jp/sitedata/character-assets.json`を使用する。
-  - `https://raw.githubusercontent.com/sinsuirakv0/KBC-rakv0-assets/main/jp/sitedata/character-assets.json`
-- PNG本体は、`character-assets.json`の`pathTemplates`と各キャラのsuffixから復元した`jp/sitedata/`配下のパスから取得する。
+- 関連ファイルの候補パスは、キャラID、形態、`unitbuy.csv`の共有IDと固定されたファイル命名規則から生成する。
+- 候補の存在確認は`jp/sitedata/`配下の各URLへHEADリクエストを行い、実在するファイルだけを使用する。`character-assets.json`には依存しない。
 - 第一・第二形態の共有アセットIDは、`Data/unitbuy.csv`の0始まり列61・62から取得する。
 - 戦闘用スプライトは`Number/<stem>.png`、切り抜き・モデル・モーションは`ImageData/<stem>.*`から取得する。
 - `character-index.json`の`units[].forms`は、配列順に第一～第四形態を表す。
@@ -20,22 +19,23 @@
 - `o.ut help`: `content/help/ut.txt`の内容を表示する。
 - `o.ut <名前・別称・ID>`: キャラを検索する。
 - `o.ut <検索語> -f`: 正規化しない名前検索を行う。
-- `o.ut <名前・別称・ID> origin ...`: 指定したPNG画像を添付する。
+- `o.ut <名前・別称・ID> file [f|c|s|u]`: 関連ファイルを一覧表示し、選択した元ファイルを添付する。
+- 旧`origin`形式は互換用として従来動作を維持するが、ヘルプには掲載しない。
 - `o.ut <名前・別称・ID> motion ...`: 指定したフレームのPNG、または複数区間を連結したMP4・GIFを添付する。
 
-外部詳細ページは、キャラIDからJDBのURLを組み立てる。
+外部詳細ページは、パスを`u000.html`に固定し、キャラIDを`unit`へ指定して組み立てる。
 
 ```text
 https://jarjarblink.github.io/JDB/u000.html?cc=ja&unit=000
 ```
 
-引数は`o.ut <検索語> [-f] [origin <画像指定> | motion <出力指定>]`の順に解釈する。
+引数は`o.ut <検索語> [-f] [file [形態] | motion <出力指定>]`の順に解釈する。互換用の`origin`も操作引数として認識する。
 
-- `origin`または`motion`より前を検索語、後ろを各出力指定として扱う。
-- `-f`は`origin`または`motion`より前にある場合だけ検索オプションとして扱う。
+- `file`、`origin`または`motion`より前を検索語、後ろを各出力指定として扱う。
+- `-f`は操作引数より前にある場合だけ検索オプションとして扱う。
 - `f / c / s / u`は出力指定内にある場合だけ形態指定として扱う。
-- `-f`と`origin`または`motion`は併用できる。
-- 検索語がない場合や、`origin`と`motion`を同時指定した場合は不正な引数とする。
+- `-f`と各操作は併用できる。
+- 検索語がない場合や、`file`、`origin`、`motion`を複数指定した場合は不正な引数とする。
 
 ## 通常検索
 
@@ -125,14 +125,28 @@ https://jarjarblink.github.io/JDB/u000.html?cc=ja&unit=000
 - 時間切れ時はリアクションをすべて削除し、案内文を`ページ操作受付は終了しました。詳細は o.ut <ID> で表示できます。`へ編集する。現在のページは残す。
 - リアクションの追加・削除に必要なBot権限は必須とし、権限不足時の代替表示は設けない。
 
-## origin画像表示
+## file表示
+
+```text
+o.ut <検索語> file
+o.ut <検索語> file [f|c|s|u]
+```
+
+- キャラ候補が1件なら、そのキャラに関係する実在ファイルを一覧表示する。2～9件なら先に数字リアクションでキャラを確定し、10件以上ならIDでの再実行を案内する。
+- 形態指定なしでは、実在する全形態のファイルとガチャ画像を対象にする。形態指定時は、その形態のアイコン・横長画像・スプライト・`imgcut`・`mamodel`・`00`～`03.maanim`だけを対象にする。
+- 一覧は1ページ9件とし、各ページの数字リアクションでファイルを選択する。続きがあるページには`▶️`、2ページ目以降には`◀️`を付ける。
+- ページ移動時はリアクションを削除して本文を編集し、現在ページの数字と有効な矢印だけを付け直す。有効操作ごとに60秒の受付時間を更新する。
+- 選択後はリアクションを削除し、一覧を選択済み表示へ編集してから、元のファイル名で添付する。PNG以外の`imgcut`・`mamodel`・`maanim`も加工せず添付する。
+- 候補パスを6件ずつHEAD確認し、404の候補は一覧から除外する。存在確認結果は10分間キャッシュするが、ファイル本体はキャッシュしない。
+
+## origin互換
 
 ### 基本動作
 
-- `origin`成功時は、文章、キャラ名、URLを付けず、PNGファイルだけをDiscordへ添付する。
+- `origin`は旧コマンドとの互換用に残し、成功時は文章、キャラ名、URLを付けず、PNGファイルだけをDiscordへ添付する。
 - 添付ファイル名は、取得元のファイル名をそのまま使用する。
 - 指定した画像が存在しない場合はエラーを返し、別形態や別系統の画像へフォールバックしない。
-- PNGの存在確認は`character-assets.json`の登録内容に従う。
+- PNGの存在確認は対象URLへのHEADリクエストで行う。
 
 ### 共有アセット解決
 
@@ -196,7 +210,7 @@ o.ut <検索語> origin sprite u
 - 通常形態は`Number/{id}_{f|c|s|u}.png`を表示する。
 - 第一・第二形態が共有アセットを使う場合は`Number/{sharedId}_m.png`を表示する。
 - 形態を省略した場合は第一形態を表示する。
-- 対応する`imgcut`と`mamodel`が`character-assets.json`に登録されている場合だけ有効とする。
+- 対応するスプライトが実在する場合だけ有効とする。
 
 ### gacha
 
@@ -255,7 +269,7 @@ o.ut 450 motion mp4 f w i a k --full
 - 範囲を省略したモーションは0フレーム目から最終フレームまで使う。
 - 区間ごとにモーション記号と範囲を解釈し、指定順を維持して連結する。
 - 指定フレームまたは範囲が実データの最終フレームを超える場合はエラーとする。自動補正しない。
-- 指定モーションの`maanim`、または同じstemのPNG・`imgcut`・`mamodel`が未登録の場合はエラーとし、別形態へフォールバックしない。
+- 指定モーションの`maanim`、または同じstemのPNG・`imgcut`・`mamodel`がHEAD確認で存在しない場合はエラーとし、別形態へフォールバックしない。
 - 生成ファイルには文章、キャラ名、URLを付けず添付する。進行度は別の本文メッセージ一つで表示する。
 
 ### 表示範囲
@@ -300,8 +314,8 @@ o.ut 450 motion mp4 f w i a k --full
 ## キャッシュと更新検知
 
 - `character-index.json`のキャッシュ有効期間は10分とする。
-- `character-assets.json`は最初の`origin`または`motion`実行時に遅延取得し、10分間キャッシュする。
-- `Data/unitbuy.csv`は最初の`origin`共有解決または`motion`実行時に遅延取得し、10分間キャッシュする。
+- `Data/unitbuy.csv`は最初の`file`、`origin`共有解決または`motion`実行時に遅延取得し、10分間キャッシュする。
+- ファイルごとのHEAD存在確認結果は10分間キャッシュする。
 - 10分以内は通信せずキャッシュを使用する。
 - 10分経過後は`ETag`または`Last-Modified`で元ファイルの更新を確認する。
 - 更新なしの場合はデータ本体を再取得せず、キャッシュ期限だけを更新する。
@@ -314,7 +328,6 @@ o.ut 450 motion mp4 f w i a k --full
 
 - `schemaVersion`の値は受け入れ判定に使用しない。
 - `character-index.json`は、`units`、ID、1～4件の形態名、別称配列など、検索に必要な実構造を検証する。
-- `character-assets.json`は、`pathTemplates`、unit、利用するPNG suffixなど、画像取得に必要な実構造と安全な相対パスを検証する。
 - `Data/unitbuy.csv`は空行を除く全行について63列以上あることと、列61・62が`-1`以上の整数であることを検証する。
 - 1件でも不正なunitがある場合は、そのunitだけを省略せずJSON全体を不正とする。
 - 新しいデータは検証成功後にだけキャッシュへ反映する。不正な場合は直前の正常なキャッシュを維持する。
@@ -323,6 +336,7 @@ o.ut 450 motion mp4 f w i a k --full
 
 - 検索結果なし: `該当する味方キャラが見つかりませんでした。`
 - 不正なorigin指定: `originの指定が正しくありません。o.ut help で使い方を確認してください。`
+- 不正なfile指定: `fileの指定が正しくありません。o.ut help で使い方を確認してください。`
 - 不正なmotion指定: `motionの指定が正しくありません。o.ut help で使い方を確認してください。`
 - 指定した画像が未登録: `指定した画像はこのキャラには存在しません。`
 - 指定したモーションが未登録: `指定したモーションはこのキャラには存在しません。`
@@ -337,9 +351,9 @@ o.ut 450 motion mp4 f w i a k --full
 - Prefixは`o.`とする。
 - Guild内では誰でも利用でき、DMでは利用できない。
 - Botには、チャンネル表示、メッセージ送信、メッセージ履歴閲覧、リアクション追加、メッセージ管理、ファイル添付の権限を必須とする。
-- 通常検索とoriginは完了後に結果またはエラーだけを送る。motionだけは上記の進行度表示を使用する。
+- 通常検索、file、originは完了後に結果またはエラーだけを送る。motionだけは上記の進行度表示を使用する。
 - 実行用ヘルプはコードから分離し、`content/help/ut.txt`をそのまま表示する。`gacha m / z`は通常ヘルプへ記載しない。
-- テストは検索、候補数境界、リアクション、origin、motion解析、共有アセット解決、キャッシュ更新の主要経路に絞り、少なめにする。
+- テストは検索、候補数境界、fileの選択とページ移動、origin互換、motion解析、共有アセット解決、HEAD確認キャッシュの主要経路に絞り、少なめにする。
 
 ## 全体方針との関係
 
@@ -352,7 +366,6 @@ o.ut 450 motion mp4 f w i a k --full
 - `D:/KBC/KBC-rakv0-line-bot/src/commands/entitySearchCommand.ts`
 - `D:/KBC/KBC-rakv0-line-bot/src/search/entitySearch.ts`
 - `KBC-rakv0-assets/jp/sitedata/character-index.json`
-- `KBC-rakv0-assets/jp/sitedata/character-assets.json`
 - `KBC-rakv0-assets/jp/sitedata/Data/unitbuy.csv`
 - `D:/KBC/KBC-rakv0/unit/motion/docs/character-motion-assets.md`
 

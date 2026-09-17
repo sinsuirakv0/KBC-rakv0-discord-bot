@@ -6,10 +6,12 @@
 import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../types";
 import { remoteUtDataSource } from "./data-source";
 import {
+  resolveCharacterFileOptions,
   resolveMotionAssetPlan,
   resolveOriginAssetPath,
   searchCharacterIndex,
 } from "./domain";
+import { selectAssetFile } from "../shared/file-picker";
 import {
   formatDetailResult,
   formatMatchLabel,
@@ -24,8 +26,8 @@ import { utMotionRenderer } from "./motion-renderer";
 import { createUtMotionProgress } from "./motion-progress";
 import { UtMotionTimeoutError } from "./motion-timeout";
 import {
-  UnitBuy,
   UtDataSource,
+  UtFileRequest,
   UtMotionRenderer,
   UtMotionRequest,
   UtOriginRequest,
@@ -35,9 +37,12 @@ import {
 const NOT_FOUND_MESSAGE = "該当する味方キャラが見つかりませんでした。";
 const INVALID_ORIGIN_MESSAGE =
   "originの指定が正しくありません。o.ut help で使い方を確認してください。";
+const INVALID_FILE_MESSAGE =
+  "fileの指定が正しくありません。o.ut help で使い方を確認してください。";
 const INVALID_MOTION_MESSAGE =
   "motionの指定が正しくありません。o.ut help で使い方を確認してください。";
 const MISSING_IMAGE_MESSAGE = "指定した画像はこのキャラには存在しません。";
+const MISSING_FILE_MESSAGE = "このキャラに関連するファイルが見つかりませんでした。";
 const MISSING_MOTION_MESSAGE = "指定したモーションはこのキャラには存在しません。";
 const INVALID_FRAME_MESSAGE = "指定したフレームはこのモーションには存在しません。";
 const DATA_ERROR_MESSAGE =
@@ -68,22 +73,68 @@ async function sendOriginImage(
   dataSource: UtDataSource,
   output: InteractiveCommandOutput,
 ): Promise<void> {
-  const [assets, unitBuy] = await Promise.all([
-    loadData(() => dataSource.fetchCharacterAssets()),
-    origin.family === "gacha"
-      ? Promise.resolve<UnitBuy>({ units: [] })
-      : loadData(() => dataSource.fetchUnitBuy()),
-  ]);
-  if (!assets || !unitBuy) {
+  const unitBuy = origin.family === "gacha"
+    ? { units: [] }
+    : await loadData(() => dataSource.fetchUnitBuy());
+  if (!unitBuy) {
     await output.send(DATA_ERROR_MESSAGE);
     return;
   }
-  const relativePath = resolveOriginAssetPath(assets, unitBuy, match.unit.id, origin);
+  const relativePath = resolveOriginAssetPath(unitBuy, match.unit.id, origin);
   if (!relativePath) {
     await output.send(MISSING_IMAGE_MESSAGE);
     return;
   }
+  const existing = await loadData(() => dataSource.findExistingAssets([relativePath]));
+  if (!existing) {
+    await output.send(DATA_ERROR_MESSAGE);
+    return;
+  }
+  if (!existing.has(relativePath)) {
+    await output.send(MISSING_IMAGE_MESSAGE);
+    return;
+  }
   const attachment = await loadData(() => dataSource.fetchPng(relativePath));
+  if (!attachment) {
+    await output.send(DATA_ERROR_MESSAGE);
+    return;
+  }
+  await output.sendAttachment(attachment);
+}
+
+async function sendFilePicker(
+  match: UtSearchMatch,
+  request: UtFileRequest,
+  dataSource: UtDataSource,
+  output: InteractiveCommandOutput,
+  timeoutMs: number,
+): Promise<void> {
+  const unitBuy = await loadData(() => dataSource.fetchUnitBuy());
+  if (!unitBuy) {
+    await output.send(DATA_ERROR_MESSAGE);
+    return;
+  }
+  const candidates = resolveCharacterFileOptions(match.unit, unitBuy, request.form);
+  const existing = await loadData(() =>
+    dataSource.findExistingAssets(candidates.map(({ relativePath }) => relativePath))
+  );
+  if (!existing) {
+    await output.send(DATA_ERROR_MESSAGE);
+    return;
+  }
+  const options = candidates.filter(({ relativePath }) => existing.has(relativePath));
+  if (options.length === 0) {
+    await output.send(MISSING_FILE_MESSAGE);
+    return;
+  }
+  const selected = await selectAssetFile(
+    `味方キャラ「${match.unit.id} ${match.unit.forms[0].name}」関連ファイル`,
+    options,
+    output,
+    timeoutMs,
+  );
+  if (!selected) return;
+  const attachment = await loadData(() => dataSource.fetchFile(selected.relativePath));
   if (!attachment) {
     await output.send(DATA_ERROR_MESSAGE);
     return;
@@ -100,16 +151,30 @@ async function sendMotion(
 ): Promise<void> {
   const message = await output.send("モーションのデータを確認しています…");
   const progress = createUtMotionProgress(message);
-  const [assets, unitBuy] = await Promise.all([
-    loadData(() => dataSource.fetchCharacterAssets()),
-    loadData(() => dataSource.fetchUnitBuy()),
-  ]);
-  if (!assets || !unitBuy) {
+  const unitBuy = await loadData(() => dataSource.fetchUnitBuy());
+  if (!unitBuy) {
     await progress.finish(DATA_ERROR_MESSAGE);
     return;
   }
-  const plan = resolveMotionAssetPlan(assets, unitBuy, match.unit.id, request);
+  const plan = resolveMotionAssetPlan(unitBuy, match.unit.id, request);
   if (!plan) {
+    await progress.finish(MISSING_MOTION_MESSAGE);
+    return;
+  }
+  const requiredPaths = [
+    plan.spritePath,
+    plan.imgcutPath,
+    plan.modelPath,
+    ...Object.values(plan.animationPaths).filter(
+      (relativePath): relativePath is string => Boolean(relativePath),
+    ),
+  ];
+  const existing = await loadData(() => dataSource.findExistingAssets(requiredPaths));
+  if (!existing) {
+    await progress.finish(DATA_ERROR_MESSAGE);
+    return;
+  }
+  if (requiredPaths.some((relativePath) => !existing.has(relativePath))) {
     await progress.finish(MISSING_MOTION_MESSAGE);
     return;
   }
@@ -262,6 +327,10 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         await output.send(INVALID_ORIGIN_MESSAGE);
         return;
       }
+      if (request.kind === "invalid-file") {
+        await output.send(INVALID_FILE_MESSAGE);
+        return;
+      }
       if (request.kind === "invalid-motion") {
         await output.send(INVALID_MOTION_MESSAGE);
         return;
@@ -278,7 +347,7 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         return;
       }
 
-      if (request.origin || request.motion) {
+      if (request.origin || request.file || request.motion) {
         let selected: UtSearchMatch | undefined;
         if (matches.length === 1) {
           selected = matches[0];
@@ -289,6 +358,15 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         }
         if (selected && request.origin) {
           await sendOriginImage(selected, request.origin, dependencies.dataSource, output);
+        }
+        if (selected && request.file) {
+          await sendFilePicker(
+            selected,
+            request.file,
+            dependencies.dataSource,
+            output,
+            timeoutMs,
+          );
         }
         if (selected && request.motion) {
           await sendMotion(

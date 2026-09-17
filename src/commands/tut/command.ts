@@ -5,13 +5,14 @@
 } from "../../config/tut";
 import { fileCommandHelpSource } from "../help/data-source";
 import { CommandHelpSource } from "../help/types";
+import { selectAssetFile } from "../shared/file-picker";
 import { createMotionProgress } from "../shared/motion/progress";
 import { motionRenderer as sharedMotionRenderer } from "../shared/motion/renderer";
 import { MotionTimeoutError } from "../shared/motion/timeout";
 import { MotionRenderer, MotionRequest } from "../shared/motion/types";
 import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../types";
 import { remoteTutDataSource } from "./data-source";
-import { resolveEnemyMotionPlan, searchEnemies } from "./domain";
+import { resolveEnemyFileOptions, resolveEnemyMotionPlan, searchEnemies } from "./domain";
 import {
   formatEnemyDetail,
   formatEnemyLabel,
@@ -28,6 +29,9 @@ const NOT_FOUND_MESSAGE = "該当する敵ユニットが見つかりません�
 const DATA_ERROR_MESSAGE =
   "敵データを取得できませんでした。時間をおいて再度お試しください。";
 const IMAGE_ERROR_MESSAGE = "敵画像の取得に失敗しました。";
+const INVALID_FILE_MESSAGE =
+  "fileの指定が正しくありません。o.tut help で使い方を確認してください。";
+const MISSING_FILE_MESSAGE = "この敵に関連するファイルが見つかりませんでした。";
 const INVALID_MOTION_MESSAGE =
   "motionの指定が正しくありません。o.tut help で使い方を確認してください。";
 const MISSING_MOTION_MESSAGE = "指定したモーションはこの敵には存在しません。";
@@ -69,6 +73,43 @@ async function sendEnemyImage(
   }
 }
 
+async function sendEnemyFilePicker(
+  match: TutSearchMatch,
+  dataSource: TutDataSource,
+  output: InteractiveCommandOutput,
+  timeoutMs: number,
+): Promise<void> {
+  const candidates = resolveEnemyFileOptions(match.enemy.id);
+  let existing: ReadonlySet<string>;
+  try {
+    existing = await dataSource.findExistingAssets(
+      candidates.map(({ relativePath }) => relativePath),
+    );
+  } catch (error) {
+    console.error("Enemy file check failed.", error);
+    await output.send(DATA_ERROR_MESSAGE);
+    return;
+  }
+  const options = candidates.filter(({ relativePath }) => existing.has(relativePath));
+  if (options.length === 0) {
+    await output.send(MISSING_FILE_MESSAGE);
+    return;
+  }
+  const selected = await selectAssetFile(
+    `敵ユニット「${match.enemy.id} ${match.enemy.displayName}」関連ファイル`,
+    options,
+    output,
+    timeoutMs,
+  );
+  if (!selected) return;
+  try {
+    await output.sendAttachment(await dataSource.fetchFile(selected.relativePath));
+  } catch (error) {
+    console.error("Enemy file retrieval failed.", error);
+    await output.send(DATA_ERROR_MESSAGE);
+  }
+}
+
 async function sendEnemyMotion(
   match: TutSearchMatch,
   request: MotionRequest,
@@ -78,17 +119,28 @@ async function sendEnemyMotion(
 ): Promise<void> {
   const message = await output.send("モーションのデータを確認しています…");
   const progress = createMotionProgress(message);
-  let assets;
-  try {
-    assets = await dataSource.fetchEnemyMotionAssets();
-  } catch (error) {
-    console.error("Enemy motion metadata retrieval failed.", error);
-    await progress.finish(DATA_ERROR_MESSAGE);
-    return;
-  }
-  const plan = resolveEnemyMotionPlan(assets, match.enemy.id, request);
+  const plan = resolveEnemyMotionPlan(match.enemy.id, request);
   if (!plan) {
     await progress.finish(MISSING_MOTION_MESSAGE);
+    return;
+  }
+  const requiredPaths = [
+    plan.spritePath,
+    plan.imgcutPath,
+    plan.modelPath,
+    ...Object.values(plan.animationPaths).filter(
+      (relativePath): relativePath is string => Boolean(relativePath),
+    ),
+  ];
+  try {
+    const existing = await dataSource.findExistingAssets(requiredPaths);
+    if (requiredPaths.some((relativePath) => !existing.has(relativePath))) {
+      await progress.finish(MISSING_MOTION_MESSAGE);
+      return;
+    }
+  } catch (error) {
+    console.error("Enemy motion asset check failed.", error);
+    await progress.finish(DATA_ERROR_MESSAGE);
     return;
   }
   try {
@@ -244,6 +296,10 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
         await output.send(INVALID_MOTION_MESSAGE);
         return;
       }
+      if (request.kind === "invalid-file") {
+        await output.send(INVALID_FILE_MESSAGE);
+        return;
+      }
 
       let data;
       try {
@@ -259,7 +315,7 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
         return;
       }
 
-      if (request.origin || request.motion) {
+      if (request.origin || request.file || request.motion) {
         let selected: TutSearchMatch | undefined;
         if (matches.length === 1) {
           selected = matches[0];
@@ -270,6 +326,14 @@ export function createTutCommand(dependencies: TutCommandDependencies): CommandD
         }
         if (selected && request.origin) {
           await sendEnemyImage(selected, dependencies.dataSource, output);
+        }
+        if (selected && request.file) {
+          await sendEnemyFilePicker(
+            selected,
+            dependencies.dataSource,
+            output,
+            timeoutMs,
+          );
         }
         if (selected && request.motion) {
           await sendEnemyMotion(selected, request.motion, dependencies.dataSource, motionRenderer, output);

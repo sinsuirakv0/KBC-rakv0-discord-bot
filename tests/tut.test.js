@@ -6,6 +6,7 @@ const { createRemoteTutDataSource } = require("../dist/commands/tut/data-source"
 const {
   buildEnemySearchData,
   resolveEnemyDisplayName,
+  resolveEnemyFileOptions,
   resolveEnemyMotionPlan,
   searchEnemies,
 } = require("../dist/commands/tut/domain");
@@ -69,6 +70,12 @@ test("tut parses controls and searches IDs, normalized names, raw aliases, and s
   });
   assert.deepEqual(parseTutRequest(["-f"]), { kind: "help" });
   assert.deepEqual(parseTutRequest(["origin"]), { kind: "help" });
+  assert.deepEqual(parseTutRequest(["わんこ", "file"]), {
+    kind: "search", query: "わんこ", force: false, origin: false, file: true,
+  });
+  assert.deepEqual(parseTutRequest(["わんこ", "file", "extra"]), {
+    kind: "invalid-file",
+  });
 
   const names = parseEnemyNameTsv("\uFEFFわんこ\n\nダミー\nネコ－Ａ\n");
   const aliases = parseEnemyAliasJson(JSON.stringify([
@@ -104,7 +111,7 @@ test("tut parses controls and searches IDs, normalized names, raw aliases, and s
   );
 });
 
-test("tut motion parses enemy-only formats and resolves validated _e assets", () => {
+test("tut motion parses enemy-only formats and resolves deterministic _e assets", () => {
   assert.deepEqual(parseTutRequest(["0", "motion", "png", "a", "15", "--full", "-f"]), {
     kind: "search", query: "0", force: true, origin: false,
     motion: { format: "png", full: true, segments: [{ motion: "attack", frame: 15 }] },
@@ -127,12 +134,8 @@ test("tut motion parses enemy-only formats and resolves validated _e assets", ()
     ["0", "motion", "mp4", "a", "2~~1"],
     ["0", "origin", "motion", "png", "a"],
   ]) assert.deepEqual(parseTutRequest(args), { kind: "invalid-motion" });
-  const units = [{ id: "000", suffixes: { i: [
-    "_e.imgcut", "_e.mamodel", "_e00.maanim", "_e01.maanim", "_e02.maanim", "_e03.maanim",
-  ] } }];
-  const assets = { pathTemplates: { i: "ImageData/{id}{suffix}" }, units };
   const request = parseTutRequest(["0", "motion", "mp4", "w", "a"]).motion;
-  assert.deepEqual(resolveEnemyMotionPlan(assets, 0, request), {
+  assert.deepEqual(resolveEnemyMotionPlan(0, request), {
     ...request,
     filenameStem: "tut-000-motion", previewScale: 2.25,
     spritePath: "Number/000_e.png",
@@ -143,14 +146,23 @@ test("tut motion parses enemy-only formats and resolves validated _e assets", ()
       attack: "ImageData/000_e02.maanim",
     },
   });
-  assert.equal(resolveEnemyMotionPlan({ ...assets, units: [{ ...units[0], suffixes: { i: ["_e.imgcut", "_e.mamodel"] } }] }, 0, request), undefined);
-  assert.equal(resolveEnemyMotionPlan(assets, 1, request), undefined);
+  assert.deepEqual(
+    resolveEnemyFileOptions(0).map(({ relativePath }) => relativePath),
+    [
+      "Image/enemy_icon_000.png",
+      "Number/000_e.png",
+      "ImageData/000_e.imgcut",
+      "ImageData/000_e.mamodel",
+      "ImageData/000_e00.maanim",
+      "ImageData/000_e01.maanim",
+      "ImageData/000_e02.maanim",
+      "ImageData/000_e03.maanim",
+    ],
+  );
+  assert.equal(resolveEnemyMotionPlan(-1, request), undefined);
 });
 
 test("tut motion selects candidates, sends progress and attachments, and reports invalid frames", async () => {
-  const assets = { pathTemplates: { i: "ImageData/{id}{suffix}" }, units: [0, 1].map(id => ({
-    id: String(id).padStart(3, "0"), suffixes: { i: ["_e.imgcut", "_e.mamodel", "_e02.maanim"] },
-  })) };
   const paths = [];
   const renderer = { async render(plan, fetchAsset, onProgress) {
     assert.equal(plan.filenameStem, "tut-001-motion");
@@ -162,7 +174,7 @@ test("tut motion selects candidates, sends progress and attachments, and reports
   } };
   const dataSource = {
     async fetchSearchData() { return repeatedData(2); },
-    async fetchEnemyMotionAssets() { return assets; },
+    async findExistingAssets(relativePaths) { return new Set(relativePaths); },
     async fetchMotionAsset() { return Uint8Array.from([1]); },
   };
   const output = createFakeOutput(["2️⃣"]);
@@ -226,6 +238,22 @@ test("tut applies UT count boundaries, selection, serialized paging, and origin-
   assert.equal(originOutput.attachments.length, 1);
   assert.doesNotMatch(originOutput.messages[0].content, /origin|-force/);
   assert.equal(originOutput.messages[1].content, undefined);
+
+  const fileOutput = createFakeOutput(["3️⃣"]);
+  const fetchedPaths = [];
+  await createTutCommand({
+    dataSource: {
+      async fetchSearchData() { return repeatedData(1); },
+      async findExistingAssets(relativePaths) { return new Set(relativePaths); },
+      async fetchFile(relativePath) {
+        fetchedPaths.push(relativePath);
+        return { data: Uint8Array.from([1]), filename: relativePath.split("/").at(-1) };
+      },
+    },
+  }).execute(commandContext(fileOutput), ["0", "file"]);
+  assert.deepEqual(fetchedPaths, ["ImageData/000_e.imgcut"]);
+  assert.equal(fileOutput.attachments[0].filename, "000_e.imgcut");
+  assert.match(fileOutput.messages[0].content, /選択済み: ImageData\/000_e\.imgcut/);
 });
 
 test("tut atomically caches both resources, revalidates conditionally, falls back stale, and never caches PNG", async () => {

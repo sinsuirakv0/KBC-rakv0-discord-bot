@@ -8,12 +8,12 @@ const { createUtMotionProgress } = require("../dist/commands/ut/motion-progress"
 const { createMotionCanvas } = require("../dist/commands/shared/motion/canvas");
 const {
   normalizeSearchText,
+  resolveCharacterFileOptions,
   resolveMotionAssetPlan,
   resolveOriginAssetPath,
   searchCharacterIndex,
 } = require("../dist/commands/ut/domain");
 const {
-  parseCharacterAssets,
   parseCharacterIndex,
   parseUnitBuy,
   parseUtRequest,
@@ -89,7 +89,6 @@ function commandContext(output) {
 function dataSourceFor(index, overrides = {}) {
   return {
     async fetchCharacterIndex() { return index; },
-    async fetchCharacterAssets() { throw new Error("assets must not be requested"); },
     async fetchUnitBuy() {
       return {
         units: index.units.map((entry) => ({
@@ -98,7 +97,9 @@ function dataSourceFor(index, overrides = {}) {
         })),
       };
     },
+    async findExistingAssets(relativePaths) { return new Set(relativePaths); },
     async fetchAsset() { throw new Error("asset must not be requested"); },
+    async fetchFile() { throw new Error("file must not be requested"); },
     async fetchPng() { throw new Error("PNG must not be requested"); },
     ...overrides,
   };
@@ -134,6 +135,14 @@ test("ut parses origin forms and searches ID, normalized forms, raw forms, and a
     force: false,
     origin: { family: "sprite", variant: "c" },
   });
+  assert.deepEqual(parseUtRequest(["ネコ", "file"]), {
+    kind: "search", query: "ネコ", force: false, file: {},
+  });
+  assert.deepEqual(parseUtRequest(["ネコ", "file", "s"]), {
+    kind: "search", query: "ネコ", force: false, file: { form: "s" },
+  });
+  assert.deepEqual(parseUtRequest(["ネコ", "file", "icon"]), { kind: "invalid-file" });
+  assert.deepEqual(parseUtRequest(["file"]), { kind: "invalid-file" });
   assert.deepEqual(parseUtRequest(["ネコ", "motion", "png", "s", "a", "15"]), {
     kind: "search",
     query: "ネコ",
@@ -194,7 +203,7 @@ test("ut parses origin forms and searches ID, normalized forms, raw forms, and a
   assert.equal(searchCharacterIndex(index, "別称ヒット", true).length, 0);
 });
 
-test("ut validates every index/assets unit, ignores schemaVersion values, and rejects unsafe paths", () => {
+test("ut validates every index and unitbuy row while ignoring schemaVersion values", () => {
   const parsedIndex = parseCharacterIndex({
     schemaVersion: "future-value",
     units: [unit(0, "ネコ")],
@@ -205,68 +214,6 @@ test("ut validates every index/assets unit, ignores schemaVersion values, and re
     /invalid id/,
   );
 
-  const assets = parseCharacterAssets({
-    schemaVersion: -1,
-    pathTemplates: {
-      i: "ImageData/{id}{suffix}",
-      un: "Unit/uni{id}{suffix}",
-      uu: "Unit/udi{id}{suffix}",
-      g: "Image/gatyachara_{id}{suffix}",
-      x: "{suffix}",
-    },
-    units: [{
-      id: "000",
-      i: ["_f.imgcut", "_f.mamodel"],
-      un: ["_f00.png", "_c00.png"],
-      uu: ["_u.png"],
-      g: ["_f.png", "_m.png", "_z.png"],
-    }],
-  });
-  assert.equal(
-    resolveOriginAssetPath(
-      assets,
-      { units: [{ id: "000", sharedFormIds: [undefined, undefined] }] },
-      "000",
-      { family: "icon", variant: "c" },
-    ),
-    "Unit/uni000_c00.png",
-  );
-  assert.equal(
-    resolveOriginAssetPath(
-      assets,
-      { units: [{ id: "000", sharedFormIds: [undefined, undefined] }] },
-      "000",
-      { family: "wide", variant: "u" },
-    ),
-    "Unit/udi000_u.png",
-  );
-  assert.equal(
-    resolveOriginAssetPath(assets, { units: [] }, "000", { family: "gacha", variant: "m" }),
-    "Image/gatyachara_000_m.png",
-  );
-  assert.equal(
-    resolveOriginAssetPath(
-      assets,
-      { units: [{ id: "000", sharedFormIds: [undefined, undefined] }] },
-      "000",
-      { family: "icon", variant: "s" },
-    ),
-    undefined,
-  );
-  assert.throws(
-    () => parseCharacterAssets({
-      pathTemplates: {
-        i: "ImageData/{id}{suffix}",
-        un: "Unit/uni{id}{suffix}",
-        uu: "Unit/udi{id}{suffix}",
-        g: "Image/gatyachara_{id}{suffix}",
-        x: "{suffix}",
-      },
-      units: [{ id: "000", x: ["../secret.png"] }],
-    }),
-    /Unsafe character asset path/,
-  );
-
   const unitBuyRow = Array(63).fill("0");
   unitBuyRow[61] = "0";
   unitBuyRow[62] = "1";
@@ -274,50 +221,35 @@ test("ut validates every index/assets unit, ignores schemaVersion values, and re
 });
 
 test("ut resolves shared egg assets for origin and motion", () => {
-  const units = [];
-  units[0] = {
-    id: "000",
-    suffixes: {
-      i: ["_m.imgcut", "_m.mamodel", "_m00.maanim", "_m02.maanim"],
-      un: ["_m00.png"],
-      uu: ["_m00.png"],
-    },
-  };
-  units[1] = {
-    id: "001",
-    suffixes: {
-      i: ["_m.imgcut", "_m.mamodel", "_m00.maanim"],
-      un: ["_m01.png"],
-      uu: ["_m01.png"],
-    },
-  };
   const unitBuyUnits = [];
   unitBuyUnits[656] = { id: "656", sharedFormIds: ["000", "001"] };
-  const assets = {
-    pathTemplates: {
-      i: "ImageData/{id}{suffix}",
-      un: "Unit/uni{id}{suffix}",
-      uu: "Unit/udi{id}{suffix}",
-      g: "Image/gatyachara_{id}{suffix}",
-    },
-    units,
-  };
   const unitBuy = { units: unitBuyUnits };
 
   assert.equal(
-    resolveOriginAssetPath(assets, unitBuy, "656", { family: "wide", variant: "f" }),
+    resolveOriginAssetPath(unitBuy, "656", { family: "wide", variant: "f" }),
     "Unit/udi000_m00.png",
   );
   assert.equal(
-    resolveOriginAssetPath(assets, unitBuy, "656", { family: "sprite", variant: "f" }),
+    resolveOriginAssetPath(unitBuy, "656", { family: "sprite", variant: "f" }),
     "Number/000_m.png",
   );
   assert.equal(
-    resolveOriginAssetPath(assets, unitBuy, "656", { family: "icon", variant: "c" }),
+    resolveOriginAssetPath(unitBuy, "656", { family: "icon", variant: "c" }),
     "Unit/uni001_m01.png",
   );
   assert.deepEqual(
-    resolveMotionAssetPlan(assets, unitBuy, "656", {
+    resolveCharacterFileOptions(unit(656, "タマゴ", ["第二形態"]), unitBuy, "f")
+      .slice(0, 5).map(({ relativePath }) => relativePath),
+    [
+      "Unit/uni000_m00.png",
+      "Unit/udi000_m00.png",
+      "Number/000_m.png",
+      "ImageData/000_m.imgcut",
+      "ImageData/000_m.mamodel",
+    ],
+  );
+  assert.deepEqual(
+    resolveMotionAssetPlan(unitBuy, "656", {
       format: "mp4",
       form: "f",
       full: true,
@@ -365,7 +297,7 @@ test("ut honors result-count boundaries and completes reaction selection", async
   assert.deepEqual(fourOutput.messages[0].reactions, ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]);
   assert.equal(fourOutput.messages[0].clearCount, 1);
   assert.match(fourOutput.messages[0].content, /選択済み: 001 共通1/);
-  assert.match(fourOutput.messages[1].content, /u001\.html/);
+  assert.match(fourOutput.messages[1].content, /u000\.html\?cc=ja&unit=001/);
 
   const nineOutput = createFakeOutput([undefined]);
   await createUtCommand({ dataSource: dataSourceFor(createIndex(9)) }).execute(
@@ -409,22 +341,10 @@ test("ut serializes page changes as clear, edit, and valid-arrow re-add before t
 
 test("ut origin selects candidates, preserves the registered filename, and sends no result text", async () => {
   const index = createIndex(2);
-  const assets = {
-    pathTemplates: {
-      un: "Unit/uni{id}{suffix}",
-      uu: "Unit/udi{id}{suffix}",
-      g: "Image/gatyachara_{id}{suffix}",
-    },
-    units: [
-      { id: "000", suffixes: { un: ["_f00.png"] } },
-      { id: "001", suffixes: { un: ["_f00.png"] } },
-    ],
-  };
   const fetchedPaths = [];
   const output = createFakeOutput(["2️⃣"]);
   const command = createUtCommand({
     dataSource: dataSourceFor(index, {
-      async fetchCharacterAssets() { return assets; },
       async fetchPng(relativePath) {
         fetchedPaths.push(relativePath);
         return { data: Uint8Array.from([1, 2, 3]), filename: "uni001_f00.png" };
@@ -439,28 +359,34 @@ test("ut origin selects candidates, preserves the registered filename, and sends
   assert.equal(output.messages[1].content, undefined);
 });
 
+test("ut file lists existing assets and selects across nine-item pages", async () => {
+  const index = { units: [unit(0, "ネコ", ["ネコ第二形態"])] };
+  const fetchedPaths = [];
+  const output = createFakeOutput(["▶️", "2️⃣"]);
+  await createUtCommand({
+    dataSource: dataSourceFor(index, {
+      async fetchFile(relativePath) {
+        fetchedPaths.push(relativePath);
+        return { data: Uint8Array.from([1]), filename: relativePath.split("/").at(-1) };
+      },
+    }),
+  }).execute(commandContext(output), ["ネコ", "file"]);
+
+  assert.deepEqual(fetchedPaths, ["Unit/udi000_c.png"]);
+  assert.equal(output.attachments[0].filename, "udi000_c.png");
+  assert.ok(output.messages[0].events.some(
+    (event) => event[0] === "react" && event[1] === "▶️",
+  ));
+  assert.match(output.messages[0].content, /選択済み: Unit\/udi000_c\.png/);
+});
+
 test("ut motion resolves assets and sends the renderer output", async () => {
   const index = { units: [unit(0, "ネコ")] };
-  const assets = {
-    pathTemplates: {
-      i: "ImageData/{id}{suffix}",
-      un: "Unit/uni{id}{suffix}",
-      uu: "Unit/udi{id}{suffix}",
-      g: "Image/gatyachara_{id}{suffix}",
-    },
-    units: [{
-      id: "000",
-      suffixes: {
-        i: ["_f.imgcut", "_f.mamodel", "_f00.maanim", "_f02.maanim"],
-      },
-    }],
-  };
   const fetchedPaths = [];
   const plans = [];
   const output = createFakeOutput();
   const command = createUtCommand({
     dataSource: dataSourceFor(index, {
-      async fetchCharacterAssets() { return assets; },
       async fetchAsset(relativePath) {
         fetchedPaths.push(relativePath);
         return Uint8Array.from([1]);
@@ -728,32 +654,22 @@ test("ut watchdog renews only its idle deadline and still enforces the total lim
   limited.dispose();
 });
 
-test("ut caches JSON for ten minutes, revalidates conditionally, updates content, and falls back stale", async () => {
+test("ut caches metadata and asset checks but never caches file bodies", async () => {
   const urls = {
     characterIndex: "https://example.test/character-index.json",
-    characterAssets: "https://example.test/character-assets.json",
     unitBuy: "https://example.test/unitbuy.csv",
     siteDataBase: "https://example.test/sitedata",
   };
   const indexV1 = JSON.stringify({ schemaVersion: 2, units: [unit(0, "ネコ")] });
   const indexV2 = JSON.stringify({ schemaVersion: 2, units: [unit(0, "ネコ", [], ["にゃんこ"])] });
-  const assetsText = JSON.stringify({
-    pathTemplates: {
-      i: "ImageData/{id}{suffix}",
-      un: "Unit/uni{id}{suffix}",
-      uu: "Unit/udi{id}{suffix}",
-      g: "Image/gatyachara_{id}{suffix}",
-    },
-    units: [{ id: "000", i: ["_f.imgcut", "_f.mamodel"], un: ["_f00.png"] }],
-  });
   const unitBuyColumns = Array(63).fill("0");
   unitBuyColumns[61] = "-1";
   unitBuyColumns[62] = "-1";
   const unitBuyText = unitBuyColumns.join(",");
   let now = 0;
   let indexCall = 0;
-  let assetsCalls = 0;
   let unitBuyCalls = 0;
+  let headCalls = 0;
   let pngCalls = 0;
   const conditionalHeaders = [];
   const fetchImpl = async (url, init = {}) => {
@@ -766,13 +682,13 @@ test("ut caches JSON for ten minutes, revalidates conditionally, updates content
       if (indexCall === 3) return new Response(indexV2, { headers: { etag: '"v2"' } });
       return new Response("offline", { status: 503 });
     }
-    if (value.endsWith("character-assets.json")) {
-      assetsCalls += 1;
-      return new Response(assetsText, { headers: { "last-modified": "Mon, 31 Aug 2026 00:00:00 GMT" } });
-    }
     if (value.endsWith("unitbuy.csv")) {
       unitBuyCalls += 1;
       return new Response(unitBuyText);
+    }
+    if (init.method === "HEAD") {
+      headCalls += 1;
+      return new Response(null, { status: value.endsWith("missing.png") ? 404 : 200 });
     }
     pngCalls += 1;
     return new Response(Uint8Array.from([1, 2, 3]));
@@ -788,7 +704,6 @@ test("ut caches JSON for ten minutes, revalidates conditionally, updates content
   now = 999;
   assert.equal(await source.fetchCharacterIndex(), first);
   assert.equal(indexCall, 1);
-  assert.equal(assetsCalls, 0);
 
   now = 1_000;
   assert.equal(await source.fetchCharacterIndex(), first);
@@ -807,11 +722,16 @@ test("ut caches JSON for ten minutes, revalidates conditionally, updates content
     console.error = originalConsoleError;
   }
 
-  await source.fetchCharacterAssets();
   await source.fetchUnitBuy();
-  await source.fetchPng("Unit/uni000_f00.png");
-  await source.fetchPng("Unit/uni000_f00.png");
-  assert.equal(assetsCalls, 1);
+  const existing = await source.findExistingAssets([
+    "Unit/uni000_f00.png",
+    "Unit/missing.png",
+  ]);
+  assert.deepEqual([...existing], ["Unit/uni000_f00.png"]);
+  await source.findExistingAssets(["Unit/uni000_f00.png", "Unit/missing.png"]);
+  await source.fetchFile("Unit/uni000_f00.png");
+  await source.fetchFile("Unit/uni000_f00.png");
   assert.equal(unitBuyCalls, 1);
+  assert.equal(headCalls, 2);
   assert.equal(pngCalls, 2);
 });

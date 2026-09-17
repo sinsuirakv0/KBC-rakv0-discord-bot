@@ -1,12 +1,11 @@
 ﻿import { normalizeSearchText } from "../shared/search";
 import { MotionKind, MotionPlan, MotionRequest } from "../shared/motion/types";
 import { buildMotionAnimationSuffix } from "../shared/motion/asset-suffix";
-import { buildAssetPath } from "../ut/domain";
-import { CharacterAssets } from "../ut/types";
 import {
   EnemyAliasEntry,
   EnemySearchData,
   EnemySearchEntry,
+  TutFileOption,
   TutSearchMatch,
 } from "./types";
 
@@ -82,34 +81,41 @@ export function buildEnemyIconFilename(id: number): string {
   return `enemy_icon_${String(id).padStart(3, "0")}.png`;
 }
 
+export function resolveEnemyFileOptions(id: number): readonly TutFileOption[] {
+  if (!Number.isSafeInteger(id) || id < 0) return [];
+  const assetId = String(id).padStart(3, "0");
+  const base = `${assetId}_e`;
+  return [
+    { relativePath: `Image/enemy_icon_${assetId}.png`, label: "敵アイコン" },
+    { relativePath: `Number/${base}.png`, label: "スプライト" },
+    { relativePath: `ImageData/${base}.imgcut`, label: "切り抜き情報" },
+    { relativePath: `ImageData/${base}.mamodel`, label: "モデル" },
+    { relativePath: `ImageData/${base}00.maanim`, label: "歩行" },
+    { relativePath: `ImageData/${base}01.maanim`, label: "待機" },
+    { relativePath: `ImageData/${base}02.maanim`, label: "攻撃" },
+    { relativePath: `ImageData/${base}03.maanim`, label: "ノックバック" },
+  ];
+}
+
 export function resolveEnemyMotionPlan(
-  assets: CharacterAssets,
   id: number,
   request: MotionRequest,
 ): MotionPlan | undefined {
   if (!Number.isSafeInteger(id) || id < 0) return undefined;
   const assetId = String(id).padStart(3, "0");
-  const unit = assets.units[id];
-  const template = assets.pathTemplates.i;
-  if (!unit || unit.id !== assetId || !template) return undefined;
-  const suffixes = unit.suffixes.i;
-  if (!suffixes?.includes("_e.imgcut") || !suffixes.includes("_e.mamodel")) {
-    return undefined;
-  }
   const animationPaths: Partial<Record<MotionKind, string>> = {};
   for (const segment of request.segments) {
     if (animationPaths[segment.motion]) continue;
     const suffix = buildMotionAnimationSuffix("e", segment.motion);
-    if (!suffixes.includes(suffix)) return undefined;
-    animationPaths[segment.motion] = buildAssetPath(template, assetId, suffix);
+    animationPaths[segment.motion] = `ImageData/${assetId}${suffix}`;
   }
   return {
     ...request,
     filenameStem: `tut-${assetId}-motion`,
     previewScale: id === 0 ? 2.25 : 1,
     spritePath: `Number/${assetId}_e.png`,
-    imgcutPath: buildAssetPath(template, assetId, "_e.imgcut"),
-    modelPath: buildAssetPath(template, assetId, "_e.mamodel"),
+    imgcutPath: `ImageData/${assetId}_e.imgcut`,
+    modelPath: `ImageData/${assetId}_e.mamodel`,
     animationPaths,
   };
 }

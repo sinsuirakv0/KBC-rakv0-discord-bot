@@ -1,8 +1,8 @@
 ﻿import {
-  CharacterAssets,
   CharacterIndex,
   CharacterUnit,
   UnitBuy,
+  UtFileOption,
   UtForm,
   UtMatchSource,
   UtMotionAssetPlan,
@@ -76,56 +76,75 @@ export function isSafeRelativePath(value: string): boolean {
   return value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 
-export function buildAssetPath(template: string, id: string, suffix: string): string {
-  const relativePath = template
-    .split("{id}").join(id)
-    .split("{suffix}").join(suffix);
-  if (relativePath.includes("{") || !isSafeRelativePath(relativePath)) {
-    throw new Error(`Unsafe character asset path: ${relativePath}`);
-  }
-  return relativePath;
-}
-
 export function resolveOriginAssetPath(
-  assets: CharacterAssets,
   unitBuy: UnitBuy,
   id: string,
   origin: UtOriginRequest,
 ): string | undefined {
   if (origin.family === "gacha") {
-    const numericId = Number(id);
-    const unit = Number.isSafeInteger(numericId) ? assets.units[numericId] : undefined;
-    const suffix = `_${origin.variant}.png`;
-    if (!unit || unit.id !== id || !unit.suffixes.g?.includes(suffix)) return undefined;
-    const template = assets.pathTemplates.g;
-    return template ? buildAssetPath(template, id, suffix) : undefined;
+    return `Image/gatyachara_${id}_${origin.variant}.png`;
   }
 
   const form = origin.variant as UtForm;
   const stem = resolveUnitAssetStem(unitBuy, id, form);
   if (!stem) return undefined;
-  const numericAssetId = Number(stem.assetId);
-  const unit = assets.units[numericAssetId];
-  if (!unit || unit.id !== stem.assetId) return undefined;
-
   if (origin.family === "sprite") {
-    if (
-      !unit.suffixes.i?.includes(`_${stem.suffix}.imgcut`) ||
-      !unit.suffixes.i?.includes(`_${stem.suffix}.mamodel`)
-    ) {
-      return undefined;
-    }
     return `Number/${stem.assetId}_${stem.suffix}.png`;
   }
 
-  const code = origin.family === "icon" ? "un" : "uu";
   const suffix = stem.shared
     ? `_m0${form === "f" ? 0 : 1}.png`
     : origin.family === "icon" ? `_${form}00.png` : `_${form}.png`;
-  if (!unit.suffixes[code]?.includes(suffix)) return undefined;
+  const prefix = origin.family === "icon" ? "uni" : "udi";
+  return `Unit/${prefix}${stem.assetId}${suffix}`;
+}
 
-  const template = assets.pathTemplates[code];
-  return template ? buildAssetPath(template, stem.assetId, suffix) : undefined;
+const FORMS: readonly UtForm[] = ["f", "c", "s", "u"];
+const FORM_LABELS: Readonly<Record<UtForm, string>> = {
+  f: "第一形態",
+  c: "第二形態",
+  s: "第三形態",
+  u: "第四形態",
+};
+
+export function resolveCharacterFileOptions(
+  unit: CharacterUnit,
+  unitBuy: UnitBuy,
+  formFilter?: UtForm,
+): readonly UtFileOption[] {
+  const options: UtFileOption[] = [];
+  const forms = FORMS.slice(0, unit.forms.length).filter(
+    (form) => !formFilter || form === formFilter,
+  );
+  for (const form of forms) {
+    const stem = resolveUnitAssetStem(unitBuy, unit.id, form);
+    if (!stem) continue;
+    const label = FORM_LABELS[form];
+    const sharedSuffix = `_m0${form === "f" ? 0 : 1}.png`;
+    const iconSuffix = stem.shared ? sharedSuffix : `_${form}00.png`;
+    const wideSuffix = stem.shared ? sharedSuffix : `_${form}.png`;
+    const base = `${stem.assetId}_${stem.suffix}`;
+    options.push(
+      { relativePath: `Unit/uni${stem.assetId}${iconSuffix}`, label: `${label} アイコン` },
+      { relativePath: `Unit/udi${stem.assetId}${wideSuffix}`, label: `${label} 横長画像` },
+      { relativePath: `Number/${base}.png`, label: `${label} スプライト` },
+      { relativePath: `ImageData/${base}.imgcut`, label: `${label} 切り抜き情報` },
+      { relativePath: `ImageData/${base}.mamodel`, label: `${label} モデル` },
+      { relativePath: `ImageData/${base}00.maanim`, label: `${label} 歩行` },
+      { relativePath: `ImageData/${base}01.maanim`, label: `${label} 待機` },
+      { relativePath: `ImageData/${base}02.maanim`, label: `${label} 攻撃` },
+      { relativePath: `ImageData/${base}03.maanim`, label: `${label} ノックバック` },
+    );
+  }
+  if (!formFilter) {
+    for (const variant of ["f", "m", "z"] as const) {
+      options.push({
+        relativePath: `Image/gatyachara_${unit.id}_${variant}.png`,
+        label: `ガチャ画像 ${variant}`,
+      });
+    }
+  }
+  return options;
 }
 
 interface UnitAssetStem {
@@ -151,32 +170,21 @@ export function resolveUnitAssetStem(
 }
 
 export function resolveMotionAssetPlan(
-  assets: CharacterAssets,
   unitBuy: UnitBuy,
   id: string,
   request: UtMotionRequest,
 ): UtMotionAssetPlan | undefined {
   const stem = resolveUnitAssetStem(unitBuy, id, request.form);
   if (!stem) return undefined;
-  const unit = assets.units[Number(stem.assetId)];
-  const template = assets.pathTemplates.i;
-  if (!unit || unit.id !== stem.assetId || !template) return undefined;
 
   const imgcutSuffix = `_${stem.suffix}.imgcut`;
   const modelSuffix = `_${stem.suffix}.mamodel`;
-  if (
-    !unit.suffixes.i?.includes(imgcutSuffix) ||
-    !unit.suffixes.i?.includes(modelSuffix)
-  ) {
-    return undefined;
-  }
 
   const animationPaths: Partial<Record<UtMotionKind, string>> = {};
   for (const segment of request.segments) {
     if (animationPaths[segment.motion]) continue;
     const suffix = buildMotionAnimationSuffix(stem.suffix, segment.motion);
-    if (!unit.suffixes.i?.includes(suffix)) return undefined;
-    animationPaths[segment.motion] = buildAssetPath(template, stem.assetId, suffix);
+    animationPaths[segment.motion] = `ImageData/${stem.assetId}${suffix}`;
   }
 
   return {
@@ -189,8 +197,8 @@ export function resolveMotionAssetPlan(
       : id === "009" && request.form === "f" ? 0.82 : 1,
     segments: request.segments,
     spritePath: `Number/${stem.assetId}_${stem.suffix}.png`,
-    imgcutPath: buildAssetPath(template, stem.assetId, imgcutSuffix),
-    modelPath: buildAssetPath(template, stem.assetId, modelSuffix),
+    imgcutPath: `ImageData/${stem.assetId}${imgcutSuffix}`,
+    modelPath: `ImageData/${stem.assetId}${modelSuffix}`,
     animationPaths,
   };
 }

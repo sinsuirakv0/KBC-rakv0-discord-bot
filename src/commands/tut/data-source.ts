@@ -65,7 +65,6 @@ export function createRemoteTutDataSource(
     urls: {
       ...utDataUrls,
       siteDataBase,
-      characterAssets: urls.characterAssets ?? `${siteDataBase}/character-assets.json`,
     },
     timeoutMs,
     cacheTtlMs: ttlMs,
@@ -133,7 +132,8 @@ export function createRemoteTutDataSource(
   };
 
   return {
-    fetchEnemyMotionAssets: motionSource.fetchCharacterAssets,
+    findExistingAssets: motionSource.findExistingAssets,
+    fetchFile: motionSource.fetchFile,
     fetchMotionAsset: motionSource.fetchAsset,
     async fetchSearchData(): Promise<EnemySearchData> {
       if (cache && now() - cache.validatedAt < ttlMs) return cache.value;

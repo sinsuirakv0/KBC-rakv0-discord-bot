@@ -6,8 +6,8 @@ import {
   utHttpTimeoutMs,
 } from "../../config/ut";
 import { isSafeRelativePath } from "./domain";
-import { parseCharacterAssets, parseCharacterIndex, parseUnitBuy } from "./parsers";
-import { CharacterAssets, CharacterIndex, UnitBuy, UtDataSource } from "./types";
+import { parseCharacterIndex, parseUnitBuy } from "./parsers";
+import { CharacterIndex, UnitBuy, UtDataSource } from "./types";
 
 interface CacheEntry<T> {
   value: T;
@@ -144,15 +144,6 @@ export function createRemoteUtDataSource(
     now,
     parse: (text) => parseCharacterIndex(parseJson(text, "character-index.json")),
   });
-  const fetchCharacterAssets = createCachedResource<CharacterAssets>({
-    label: "character-assets.json",
-    url: urls.characterAssets,
-    timeoutMs,
-    ttlMs,
-    fetchImpl,
-    now,
-    parse: (text) => parseCharacterAssets(parseJson(text, "character-assets.json")),
-  });
   const fetchUnitBuy = createCachedResource<UnitBuy>({
     label: "unitbuy.csv",
     url: urls.unitBuy,
@@ -163,7 +154,9 @@ export function createRemoteUtDataSource(
     parse: parseUnitBuy,
   });
 
-  const fetchAsset = async (relativePath: string): Promise<Uint8Array> => {
+  const existenceCache = new Map<string, { exists: boolean; validatedAt: number }>();
+
+  const buildAssetUrl = (relativePath: string): string => {
     if (
       !isSafeRelativePath(relativePath) ||
       !/\.(?:png|imgcut|mamodel|maanim)$/i.test(relativePath)
@@ -174,9 +167,50 @@ export function createRemoteUtDataSource(
       .split("/")
       .map((segment) => encodeURIComponent(segment))
       .join("/");
+    return `${urls.siteDataBase.replace(/\/$/, "")}/${encodedPath}`;
+  };
+
+  const checkAsset = async (relativePath: string): Promise<boolean> => {
+    const cached = existenceCache.get(relativePath);
+    if (cached && now() - cached.validatedAt < ttlMs) return cached.exists;
+    try {
+      const response = await fetchWithTimeout(
+        fetchImpl,
+        buildAssetUrl(relativePath),
+        timeoutMs,
+        { method: "HEAD" },
+      );
+      if (response.status !== 404 && !response.ok) {
+        throw new Error(`Character asset check failed with HTTP ${response.status}`);
+      }
+      const exists = response.ok;
+      existenceCache.set(relativePath, { exists, validatedAt: now() });
+      return exists;
+    } catch (error) {
+      if (cached) return cached.exists;
+      throw error;
+    }
+  };
+
+  const findExistingAssets = async (
+    relativePaths: readonly string[],
+  ): Promise<ReadonlySet<string>> => {
+    const uniquePaths = [...new Set(relativePaths)];
+    const existing = new Set<string>();
+    for (let index = 0; index < uniquePaths.length; index += 6) {
+      const batch = uniquePaths.slice(index, index + 6);
+      const results = await Promise.all(batch.map(checkAsset));
+      results.forEach((exists, resultIndex) => {
+        if (exists) existing.add(batch[resultIndex]);
+      });
+    }
+    return existing;
+  };
+
+  const fetchAsset = async (relativePath: string): Promise<Uint8Array> => {
     const response = await fetchWithTimeout(
       fetchImpl,
-      `${urls.siteDataBase.replace(/\/$/, "")}/${encodedPath}`,
+      buildAssetUrl(relativePath),
       timeoutMs,
     );
     if (!response.ok) {
@@ -187,9 +221,15 @@ export function createRemoteUtDataSource(
 
   return {
     fetchCharacterIndex,
-    fetchCharacterAssets,
     fetchUnitBuy,
+    findExistingAssets,
     fetchAsset,
+    async fetchFile(relativePath) {
+      return {
+        data: await fetchAsset(relativePath),
+        filename: relativePath.split("/").at(-1) ?? "asset.bin",
+      };
+    },
     async fetchPng(relativePath) {
       if (!isSafeRelativePath(relativePath) || !relativePath.endsWith(".png")) {
         throw new Error("Unsafe character PNG path");

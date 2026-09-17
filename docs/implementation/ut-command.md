@@ -2,7 +2,7 @@
 
 ## 構成
 
-`docs/requirements/ut.md`を正本として、味方キャラ検索、JDB詳細URL、共有アセット対応のorigin画像添付、motion画像・動画生成を実装した。`registry.ts`へ`utCommand`を明示登録し、`withCommandHelp`を介して`content/help/ut.txt`を実行時に読む。
+`docs/requirements/ut.md`を正本として、味方キャラ検索、パスを`u000.html`に固定したJDB詳細URL、関連元ファイル選択、互換用origin画像添付、motion画像・動画生成を実装した。`registry.ts`へ`utCommand`を明示登録し、`withCommandHelp`を介して`content/help/ut.txt`を実行時に読む。
 
 ```text
 src/commands/ut/
@@ -10,7 +10,7 @@ src/commands/ut/
   data-source.ts   条件付きHTTP更新、10分キャッシュ、元アセット取得
   domain.ts        検索正規化、一致元決定、共有stemとassetパスの解決
   formatters.ts    詳細URL、候補一覧、ページ本文の整形
-  parsers.ts       引数、character-index、character-assets、unitbuyの検証
+  parsers.ts       引数、character-index、unitbuyの検証
   motion-renderer.ts  共通rendererの互換export
   motion-timeout.ts   共通監視の互換export
   motion-progress.ts 共通進行度の互換export
@@ -26,6 +26,7 @@ src/commands/shared/motion/
   timeout.ts       無進捗と全体上限の監視
   progress.ts      更新間隔、通知集約、進行度メッセージ編集
   vendor/          KBC-rakv0から固定版のmotion計算を同梱
+src/commands/shared/file-picker.ts  ut・tut共通の9件ページ選択
 src/config/ut.ts   URL、TTL、HTTP・リアクション設定、ページ件数
 src/config/motion.ts  共通の画角・サイズ・生成制限
 tests/ut.test.js   主要リスクの単体テスト
@@ -35,7 +36,7 @@ domainとdata-sourceはDiscord.js型に依存しない。時刻、fetch、URL、
 
 ## 引数と検索
 
-`origin`または`motion`より前だけを検索側、後ろだけを出力指定として解釈する。検索側の`-f`を除いた残りが検索語になる。出力指定省略時は通常検索、検索語がない場合、両方を指定した場合、未対応の指定は各操作の確定エラー文を返す。
+`file`、`origin`または`motion`より前だけを検索側、後ろだけを出力指定として解釈する。検索側の`-f`を除いた残りが検索語になる。`file`は任意の形態指定だけを受け付ける。出力指定省略時は通常検索、検索語がない場合、複数操作を指定した場合、未対応の指定は各操作の確定エラー文を返す。
 
 通常検索は数字だけならID完全一致を優先する。名前検索はNFKC、大文字小文字、カタカナからひらがな、ハイフン・長音、波線類を正規化し、各形態名と別称を部分一致検索する。`-f`は正規化せず形態名だけを対象にする。
 
@@ -48,13 +49,15 @@ domainとdata-sourceはDiscord.js型に依存しない。時刻、fetch、URL、
 - 10～20件: 選択なしの静的一覧を送る。
 - 21件以上: 20件ずつ同じメッセージを編集する。
 
-originは1件なら直接添付、2～9件なら同じ数字選択、10件以上なら通常一覧を使う。選択確定・時間切れでは、全リアクション削除後に本文を確定表示へ編集する。
+file、origin、motionは1件なら対象処理へ進み、2～9件なら同じ数字選択、10件以上なら通常一覧を使う。選択確定・時間切れでは、全リアクション削除後に本文を確定表示へ編集する。
 
 ページ操作は1回ずつawaitするループで直列化する。有効な矢印を押すたびに、全リアクション削除、本文編集、現在ページで有効な矢印の再付与を順番にawaitする。その後に次の60秒待機を開始する。実行者以外と現在無効な絵文字はDiscordアダプターのfilterで無視する。時間切れでは全リアクションを削除して現在ページの終了案内だけを編集する。
 
-## origin画像
+## fileとorigin互換
 
-`character-assets.json`のunit suffix登録を確認し、次のcodeとsuffixからパスを復元する。
+`resolveCharacterFileOptions`はキャラの形態数と`unitbuy.csv`の共有IDから、アイコン・横長画像・ガチャ画像・スプライト・`imgcut`・`mamodel`・`00`～`03.maanim`の候補パスを生成する。data sourceは候補へ6件ずつHEADを行い、実在するものだけを返す。結果は10分キャッシュする。
+
+共通`selectAssetFile`は1ページ9件を数字リアクションで選択させ、続きがあれば`▶️`、2ページ目以降は`◀️`を付ける。選択後に対象ファイルだけをGETし、元ファイル名で添付する。旧`origin`はヘルプから外すが、従来の直接PNG添付として残す。候補パスは次の固定規則から作る。
 
 - icon: `un`と`_<f|c|s|u>00.png`
 - wide: `uu`と`_<f|c|s|u>.png`
@@ -63,15 +66,15 @@ originは1件なら直接添付、2～9件なら同じ数字選択、10件以上
 
 icon、wide、spriteは、第一・第二形態について`unitbuy.csv`列61・62を調べる。`-1`なら元IDと`f`・`c`、0以上なら共有IDと`m`を使う。共有icon・wideの末尾は第一形態`m00`、第二形態`m01`である。第三・第四形態とgachaは共有解決しない。
 
-suffixが未登録なら別形態へフォールバックしない。成功時の新規送信は、取得元basenameを維持したPNG添付だけであり、本文やURLを付けない。PNG本体はキャッシュしない。
+HEADで存在しなければ別形態へフォールバックしない。origin成功時の新規送信は、取得元basenameを維持したPNG添付だけであり、本文やURLを付けない。ファイル本体はキャッシュしない。
 
-テンプレートと全unitの全suffixは、JSONをキャッシュする前に実際の相対パスへ展開する。絶対パス、URL scheme、Windows区切り、空segment、`.`、`..`、URL制御文字を拒否する。
+固定規則から生成した相対パスにも、絶対パス、URL scheme、Windows区切り、空segment、`.`、`..`、URL制御文字の拒否を適用する。
 
 ## motion生成
 
 引数パーサーは出力形式、形態、モーション区間、全体表示の`full`を型付きデータへ変換する。`--full`は出力形式より後ろから取り除いてから形態・区間を解釈し、重複指定と不明なオプションは拒否する。`full`はdomainのrender planを通してworkerへ渡す。PNGは一つのモーションと0始まりの単一フレームだけを受け付ける。MP4・GIFは、`1~~15`と`1 15`を同じ両端包含範囲へ変換し、範囲なしを全フレームとして残す。
 
-domainはoriginと同じ共有stemを一度だけ解決し、`character-assets.json`の`i`登録からPNG以外の必須ファイルと、要求された`maanim`だけを許可する。ファイル番号はmove `00`、idle `01`、attack `02`、knockback `03`である。要求された一式が欠ける場合、rendererを起動せず未登録エラーを返す。
+domainはoriginと同じ共有stemを一度だけ解決し、固定命名規則からPNG・`imgcut`・`mamodel`と要求された`maanim`を組み立てる。ファイル番号はmove `00`、idle `01`、attack `02`、knockback `03`である。要求された一式をHEAD確認し、欠ける場合はrendererを起動せず不存在エラーを返す。
 
 `shared/motion/renderer.ts`の`createMotionRenderer`は待機列を持つ。既定インスタンスは`ut`・`tut`で共有し、元アセットの取得から生成完了まで1件ずつ処理する。`loadMotionAssets`は順番が来てから必須3ファイルと要求されたanimationだけを並列取得する。成功・失敗・範囲外のどれでも`finally`で待機列を解放する。元アセットや生成物の新しいキャッシュは設けない。`ut/motion-renderer.ts`は既存テストと呼び出し用の互換exportである。
 
@@ -99,17 +102,17 @@ Playwright/Chromiumへの依存を外し、`Dockerfile`は`node:22-bookworm-slim
 
 ## JSON検証とキャッシュ
 
-`schemaVersion`値は判定に使わない。character-indexは連続ID配列、1～4形態の名前・説明、別称配列を全unitで検証する。character-assetsは連続ID配列、pathTemplates、各codeのsuffix配列、復元される全パスを全unitで検証する。unitbuyは空行を除く全行の列数と列61・62の整数を検証する。1件でも不正なら新データ全体を採用しない。
+`schemaVersion`値は判定に使わない。character-indexは連続ID配列、1～4形態の名前・説明、別称配列を全unitで検証する。unitbuyは空行を除く全行の列数と列61・62の整数を検証する。1件でも不正なら新データ全体を採用しない。
 
-index、assets、unitbuyは別々の10分キャッシュを持ち、assetsとunitbuyは最初に必要となるoriginまたはmotion実行まで取得しない。期限内は通信しない。期限後は保存済みETagとLast-Modifiedを条件付きGETへ付け、304なら本文を読まず期限だけ更新する。200では本文SHA-256も比較するため、gameVersionが同じでもaliasesなどの内容変更を検知できる。validatorが提供されない場合も本文hashで判定する。
+indexとunitbuyは別々の10分キャッシュを持ち、unitbuyは最初に必要となるfile、originまたはmotion実行まで取得しない。ファイル存在確認もパス単位で10分キャッシュする。indexとunitbuyの期限後は保存済みETagとLast-Modifiedを条件付きGETへ付け、304なら本文を読まず期限だけ更新する。200では本文SHA-256も比較するため、gameVersionが同じでもaliasesなどの内容変更を検知できる。
 
 HTTP、JSON・CSV解析、全件検証に失敗した場合、新データはキャッシュへ入れず直前の正常値を返す。正常値がない場合だけコマンド層が確定済み取得失敗文へ変換する。PNG、imgcut、mamodel、maanimは都度取得し、キャッシュしない。内部URL、HTTPステータス、例外詳細はログだけへ出す。
 
 ## 検証範囲
 
-単体テストは検索一致元と正規化、3/4/9/10/20/21件境界、選択確定と時間切れ、ページ操作順、originパスと添付名、motion引数、共有stemとrender plan、全件検証、条件付き更新、内容変更、stale fallback、遅延取得、元アセット非キャッシュを確認する。軽量rendererは小さい合成fixtureでPNGの寸法・色、MP4/GIFの実デコード後の枚数・区間順序、4合成モード、失敗後の待機列解放を確認する。進行度は差し替え時刻で間隔・通知集約・終了後の上書き防止を確認する。
+単体テストは検索一致元と正規化、3/4/9/10/20/21件境界、fileの9件ページと選択、origin互換パスと添付名、motion引数、共有stemとrender plan、条件付き更新、内容変更、stale fallback、HEAD確認キャッシュ、元アセット非キャッシュを確認する。軽量rendererは小さい合成fixtureでPNGの寸法・色、MP4/GIFの実デコード後の枚数・区間順序、4合成モード、失敗後の待機列解放を確認する。進行度は差し替え時刻で間隔・通知集約・終了後の上書き防止を確認する。
 
-ローカルの`D:/KBC/KBC-rakv0-assets/jp/sitedata`でも読み取り専用スモークを行い、2026年9月12日時点のindex・assets各876件とunitbuy 876行を検証した。通常形態のPNG・MP4・GIF生成と、ID 656第一形態が共有`000_m`一式からPNG生成できることを、公開viewerと実データで確認した。
+ローカルの`D:/KBC/KBC-rakv0-assets/jp/sitedata`でも読み取り専用スモークを行い、2026年9月12日時点のindexとunitbuy 876行を検証した。通常形態のPNG・MP4・GIF生成と、ID 656第一形態が共有`000_m`一式からPNG生成できることを、公開viewerと実データで確認した。
 
 同日のWindows上で、ローカル元アセット・ID 000第一形態・攻撃0～9を3回連結した30フレームMP4を比較した。旧方式は約9.5秒、新方式は約1.3秒だった（単発計測、旧方式には公開viewer読み込みを含む）。Northflankの実測値ではなく、無料コンテナでの速度やメモリ上限への適合を保証する数値ではない。この環境にはDockerがなく、Linuxイメージのビルド検証とDiscord実送信は未実施。
 

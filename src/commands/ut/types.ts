@@ -12,6 +12,7 @@ import {
   MotionWorkerInput,
   MotionWorkerMessage,
 } from "../shared/motion/types";
+import { AssetFileOption } from "../shared/file-picker";
 
 export interface CharacterForm {
   name: string;
@@ -26,16 +27,6 @@ export interface CharacterUnit {
 
 export interface CharacterIndex {
   units: readonly CharacterUnit[];
-}
-
-export interface CharacterAssetUnit {
-  id: string;
-  suffixes: Readonly<Record<string, readonly string[]>>;
-}
-
-export interface CharacterAssets {
-  pathTemplates: Readonly<Record<string, string>>;
-  units: readonly CharacterAssetUnit[];
 }
 
 export interface UnitBuyEntry {
@@ -66,6 +57,12 @@ export interface UtOriginRequest {
   variant: UtOriginVariant;
 }
 
+export interface UtFileRequest {
+  form?: UtForm;
+}
+
+export type UtFileOption = AssetFileOption;
+
 export type UtMotionFormat = MotionFormat;
 export type UtMotionKind = MotionKind;
 export type UtMotionSegment = MotionSegment;
@@ -89,19 +86,22 @@ export type UtMotionWorkerMessage = MotionWorkerMessage;
 export type UtRequest =
   | { kind: "landing" }
   | { kind: "invalid-origin" }
+  | { kind: "invalid-file" }
   | { kind: "invalid-motion" }
   | {
       kind: "search";
       query: string;
       force: boolean;
       origin?: UtOriginRequest;
+      file?: UtFileRequest;
       motion?: UtMotionRequest;
     };
 
 export interface UtDataSource {
   fetchCharacterIndex(): Promise<CharacterIndex>;
-  fetchCharacterAssets(): Promise<CharacterAssets>;
   fetchUnitBuy(): Promise<UnitBuy>;
+  findExistingAssets(relativePaths: readonly string[]): Promise<ReadonlySet<string>>;
   fetchAsset(relativePath: string): Promise<Uint8Array>;
+  fetchFile(relativePath: string): Promise<CommandAttachment>;
   fetchPng(relativePath: string): Promise<CommandAttachment>;
 }
