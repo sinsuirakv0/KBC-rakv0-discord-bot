@@ -1,5 +1,6 @@
 node_modules/
 dist/
+native/motion-core/target/
 .env
 *.md
 tests/
@@ -32,6 +33,7 @@ archive/
 !docs/requirements/eventdata.md
 !docs/implementation/eventdata-command.md
 !tests/ut.test.js
+!tests/motion-rust-compat.test.js
 
 !tests/skd.test.js
 !docs/implementation/skd-notifications.md

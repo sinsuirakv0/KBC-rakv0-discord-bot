@@ -36,6 +36,7 @@ test("registry derives every static command from response text files", () => {
   assert.equal(commandRegistry.resolve("tut")?.name, "tut");
   assert.equal(commandRegistry.resolve("enemy"), undefined);
   assert.equal(commandRegistry.resolve("ut")?.name, "ut");
+  assert.equal(commandRegistry.resolve("utbench")?.name, "utbench");
   assert.equal(commandRegistry.resolve("help")?.name, "help");
   assert.equal(commandRegistry.resolve("skd")?.name, "skd");
   assert.equal(commandRegistry.resolve("eventdata")?.name, "eventdata");
@@ -45,7 +46,7 @@ test("registry derives every static command from response text files", () => {
   );
   assert.deepEqual(
     new Set(commandDefinitions.map((command) => command.name)),
-    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "push", "skd", "eventdata"]),
+    new Set([...Object.keys(staticResponses), "help", "sale", "gatya", "item", "st", "tut", "ut", "utbench", "push", "skd", "eventdata"]),
   );
 });
 

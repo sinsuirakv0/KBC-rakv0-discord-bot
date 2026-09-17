@@ -2,7 +2,7 @@
 import { SentCommandMessage } from "../../types";
 import { MotionProgress } from "./types";
 
-function formatProgress(progress: MotionProgress): string {
+export function formatMotionProgress(progress: MotionProgress): string {
   switch (progress.stage) {
     case "queued": return "モーション生成の順番待ちです…";
     case "loading": return "モーションのデータを取得しています…";
@@ -57,7 +57,7 @@ export function createMotionProgress(
       }
       previousStage = progress.stage;
       previousTime = currentTime;
-      return edit(formatProgress(progress));
+      return edit(formatMotionProgress(progress));
     },
     finish(content: string): Promise<void> {
       finished = true;

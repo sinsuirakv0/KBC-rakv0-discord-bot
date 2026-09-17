@@ -7,7 +7,6 @@ import { CommandContext, CommandDefinition, InteractiveCommandOutput } from "../
 import { remoteUtDataSource } from "./data-source";
 import {
   resolveCharacterFileOptions,
-  resolveMotionAssetPlan,
   resolveOriginAssetPath,
   searchCharacterIndex,
 } from "./domain";
@@ -25,6 +24,7 @@ import { parseUtRequest } from "./parsers";
 import { utMotionRenderer } from "./motion-renderer";
 import { createUtMotionProgress } from "./motion-progress";
 import { UtMotionTimeoutError } from "./motion-timeout";
+import { prepareUtMotion } from "./motion-request";
 import {
   UtDataSource,
   UtFileRequest,
@@ -56,6 +56,15 @@ export interface UtCommandDependencies {
   motionRenderer?: UtMotionRenderer;
   reactionTimeoutMs?: number;
   pageSize?: number;
+  commandName?: string;
+  administratorOnly?: boolean;
+  motionOnly?: boolean;
+  motionHandler?: (
+    match: UtSearchMatch,
+    request: UtMotionRequest,
+    dataSource: UtDataSource,
+    output: InteractiveCommandOutput,
+  ) => Promise<void>;
 }
 
 async function loadData<T>(load: () => Promise<T>): Promise<T | undefined> {
@@ -151,37 +160,19 @@ async function sendMotion(
 ): Promise<void> {
   const message = await output.send("モーションのデータを確認しています…");
   const progress = createUtMotionProgress(message);
-  const unitBuy = await loadData(() => dataSource.fetchUnitBuy());
-  if (!unitBuy) {
+  const prepared = await prepareUtMotion(match, request, dataSource);
+  if (prepared.kind === "data-error") {
     await progress.finish(DATA_ERROR_MESSAGE);
     return;
   }
-  const plan = resolveMotionAssetPlan(unitBuy, match.unit.id, request);
-  if (!plan) {
-    await progress.finish(MISSING_MOTION_MESSAGE);
-    return;
-  }
-  const requiredPaths = [
-    plan.spritePath,
-    plan.imgcutPath,
-    plan.modelPath,
-    ...Object.values(plan.animationPaths).filter(
-      (relativePath): relativePath is string => Boolean(relativePath),
-    ),
-  ];
-  const existing = await loadData(() => dataSource.findExistingAssets(requiredPaths));
-  if (!existing) {
-    await progress.finish(DATA_ERROR_MESSAGE);
-    return;
-  }
-  if (requiredPaths.some((relativePath) => !existing.has(relativePath))) {
+  if (prepared.kind === "missing") {
     await progress.finish(MISSING_MOTION_MESSAGE);
     return;
   }
 
   try {
     const attachment = await renderer.render(
-      plan,
+      prepared.plan,
       (relativePath) => dataSource.fetchAsset(relativePath),
       progress.update,
     );
@@ -308,8 +299,10 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
   const timeoutMs = dependencies.reactionTimeoutMs ?? utReactionTimeoutMs;
   const pageSize = dependencies.pageSize ?? utPageSize;
   const motionRenderer = dependencies.motionRenderer ?? utMotionRenderer;
+  const motionHandler = dependencies.motionHandler ?? ((match, request, dataSource, output) =>
+    sendMotion(match, request, dataSource, motionRenderer, output));
   return {
-    name: "ut",
+    name: dependencies.commandName ?? "ut",
     guildOnly: true,
     async execute(context: CommandContext, args: readonly string[]): Promise<void> {
       const output = context.interactive;
@@ -317,8 +310,16 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
         await context.reply(DATA_ERROR_MESSAGE);
         return;
       }
+      if (dependencies.administratorOnly && !context.isBotAdministrator) {
+        await output.send("このコマンドはBot管理者専用です。");
+        return;
+      }
 
       const request = parseUtRequest(args);
+      if (dependencies.motionOnly && (request.kind !== "search" || !request.motion)) {
+        await output.send(INVALID_MOTION_MESSAGE);
+        return;
+      }
       if (request.kind === "landing") {
         await output.send(utSearchPageUrl);
         return;
@@ -369,11 +370,10 @@ export function createUtCommand(dependencies: UtCommandDependencies): CommandDef
           );
         }
         if (selected && request.motion) {
-          await sendMotion(
+          await motionHandler(
             selected,
             request.motion,
             dependencies.dataSource,
-            motionRenderer,
             output,
           );
         }

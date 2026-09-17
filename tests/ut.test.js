@@ -5,6 +5,7 @@ const { createUtCommand } = require("../dist/commands/ut/command");
 const { createRemoteUtDataSource } = require("../dist/commands/ut/data-source");
 const { createUtMotionRenderer } = require("../dist/commands/ut/motion-renderer");
 const { createUtMotionProgress } = require("../dist/commands/ut/motion-progress");
+const { createUtBenchCommand } = require("../dist/commands/utbench/command");
 const { createMotionCanvas } = require("../dist/commands/shared/motion/canvas");
 const {
   normalizeSearchText,
@@ -82,8 +83,8 @@ function createFakeOutput(reactions = []) {
   };
 }
 
-function commandContext(output) {
-  return { inGuild: true, async reply() {}, interactive: output };
+function commandContext(output, isBotAdministrator = false) {
+  return { inGuild: true, isBotAdministrator, async reply() {}, interactive: output };
 }
 
 function dataSourceFor(index, overrides = {}) {
@@ -416,6 +417,74 @@ test("ut motion resolves assets and sends the renderer output", async () => {
   assert.equal(output.messages.length, 2);
   assert.match(output.messages[0].content, /生成・送信が完了/);
   assert.ok(output.messages[0].events.some((event) => event[0] === "edit" && /送信しています/.test(event[1])));
+});
+
+test("utbench is administrator-only and reuses ut motion parsing and asset resolution", async () => {
+  const index = {
+    units: Array.from({ length: 711 }, (_, id) =>
+      unit(id, id === 710 ? "ベンチ対象" : `対象外${id}`)),
+  };
+  const source = dataSourceFor(index);
+  const denied = createFakeOutput();
+  await createUtBenchCommand({ dataSource: source }).execute(
+    commandContext(denied),
+    ["710", "motion", "mp4", "f", "a"],
+  );
+  assert.match(denied.messages[0].content, /Bot管理者専用/);
+
+  const timing = {
+    parsingProjectMs: 1, measuringMs: 2, motionEvaluationMs: 3, layoutMs: 1,
+    paletteGenerationMs: 0, canvasDrawMs: 1, rgbaExtractionMs: 1,
+    rgbaTransferMs: 1, packetHashMs: 1, pixelHashMs: 1, workerTotalMs: 10,
+    encodingMs: 2, totalMs: 12,
+  };
+  const worker = {
+    width: 32, height: 32, totalFrames: 1, timings: {},
+    packetHashes: ["same"], pixelHashes: ["same"],
+    frames: [{ motion: "attack", frame: 0 }],
+  };
+  const run = (engine) => ({
+    engine,
+    attachment: { data: Uint8Array.from([1]), filename: `ut-710-f-motion-${engine}.mp4` },
+    outputHash: "same", outputBytes: 1, timings: timing,
+    memory: { rssBefore: 1, rssPeak: 2, rssAfter: 1, scope: "node" },
+    worker,
+  });
+  let receivedPlan;
+  const output = createFakeOutput();
+  await createUtBenchCommand({
+    dataSource: source,
+    benchmarkRenderer: {
+      async render(plan) {
+        receivedPlan = plan;
+        return {
+          assetLoadingMs: 1,
+          legacy: run("legacy"),
+          rust: run("rust"),
+          comparison: {
+            frameHashesMatch: true,
+            matchingPacketFrames: 1,
+            matchingPixelFrames: 1,
+            dimensionsMatch: true,
+            durationMatch: true,
+            outputHashMatch: true,
+          },
+        };
+      },
+    },
+  }).execute(
+    commandContext(output, true),
+    ["710", "motion", "mp4", "f", "w", "i", "a", "k", "--full"],
+  );
+  assert.equal(receivedPlan.full, true);
+  assert.deepEqual(receivedPlan.segments.map((segment) => segment.motion), [
+    "move", "idle", "attack", "knockback",
+  ]);
+  assert.deepEqual(output.attachments.map((attachment) => attachment.filename), [
+    "ut-710-f-motion-legacy.mp4",
+    "ut-710-f-motion-rust.mp4",
+  ]);
+  assert.match(output.messages[0].content, /Motion packets: 1 \/ 1 MATCH/);
 });
 
 test("ut motion progress throttles, coalesces slow edits, and preserves the final status", async () => {

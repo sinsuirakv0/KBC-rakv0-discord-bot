@@ -20,7 +20,7 @@ import {
   MotionWorkerMessage,
 } from "./types";
 
-async function loadMotionAssets(
+export async function loadMotionAssets(
   plan: MotionPlan,
   fetchAsset: (relativePath: string) => Promise<Uint8Array>,
 ): Promise<MotionAssets> {
@@ -35,7 +35,37 @@ async function loadMotionAssets(
   return { sprite, imgcut, model, animations: Object.fromEntries(animations) };
 }
 
-function encoderArguments(format: "mp4" | "gif", output: string, width: number, height: number, palette: string): string[] {
+export interface MotionJobQueue {
+  run<T>(
+    notify: (progress: MotionProgress) => void,
+    job: () => Promise<T>,
+  ): Promise<T>;
+}
+
+export function createMotionJobQueue(): MotionJobQueue {
+  let tail = Promise.resolve();
+  let pending = 0;
+  return {
+    async run<T>(notify: (progress: MotionProgress) => void, job: () => Promise<T>): Promise<T> {
+      const previous = tail;
+      let release!: () => void;
+      tail = new Promise<void>((resolve) => { release = resolve; });
+      if (pending > 0) notify({ stage: "queued" });
+      pending += 1;
+      await previous;
+      try {
+        return await job();
+      } finally {
+        pending -= 1;
+        release();
+      }
+    },
+  };
+}
+
+export const sharedMotionJobQueue = createMotionJobQueue();
+
+export function encoderArguments(format: "mp4" | "gif", output: string, width: number, height: number, palette: string): string[] {
   const input = [
     "-y", "-hide_banner", "-loglevel", "error",
     "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1",
@@ -168,32 +198,22 @@ async function renderInWorker(
 
 export function createMotionRenderer(
   options: { timeoutMs?: number; stallTimeoutMs?: number } = {},
+  queue: MotionJobQueue = createMotionJobQueue(),
 ): MotionRenderer {
-  let tail = Promise.resolve();
-  let pending = 0;
   return {
     async render(plan, fetchAsset, onProgress) {
       const notify = (progress: MotionProgress) => {
         try { onProgress?.(progress); }
         catch (error) { console.error("Motion progress failed.", error); }
       };
-      const previous = tail;
-      let release!: () => void;
-      tail = new Promise<void>((resolve) => { release = resolve; });
-      if (pending > 0) notify({ stage: "queued" });
-      pending += 1;
-      await previous;
-      try {
+      return queue.run(notify, async () => {
         notify({ stage: "loading" });
         const assets = await loadMotionAssets(plan, fetchAsset);
         return await renderInWorker(plan, assets, notify,
           options.timeoutMs ?? motionRenderTimeoutMs, options.stallTimeoutMs ?? motionStallTimeoutMs);
-      } finally {
-        pending -= 1;
-        release();
-      }
+      });
     },
   };
 }
 
-export const motionRenderer = createMotionRenderer();
+export const motionRenderer = createMotionRenderer({}, sharedMotionJobQueue);
