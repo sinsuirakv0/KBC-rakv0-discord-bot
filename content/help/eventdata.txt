@@ -11,9 +11,6 @@ o.eventdata <sale|gatya|item|ad|notice> [jp|en|kr|tw] [enc] [kbc]
 jaはjp、koはkr、popup_notice・placementはnoticeとして扱います。
 kbcを付けると、JWT不要のKBC URLを表示します。
 encとkbcを付けると、暗号化データを閲覧できるKBC URLを表示します。
-URLは種類ごとに次の形式で表示します。
-[gatya]
-URL
 
 o.eventdata <種類> [国] <tsv|file> [enc] [kbc]
 データをファイルとして添付します。tsvとfileは同じ動作です。
